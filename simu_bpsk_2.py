@@ -5,7 +5,7 @@ Created on Mon Feb  9 13:32:28 2026
 @author: arthu
 """
 import numpy as np
-import matplotlib.pyplot as plt #for plotting functions
+import matplotlib.pyplot as plt #for plotting functions azd
 
 from scipy.special import erfc
 

@@ -9,6 +9,41 @@ import matplotlib.pyplot as plt #for plotting functions azd
 
 from scipy.special import erfc
 
+#%% SFFT
+
+from scipy.fft import fft, fftfreq
+
+def sfft(signal, fs, fmax=None, fmin=0, ylim=(-80, 10), title="Spectre"):
+    N = len(signal)
+    S = fft(signal)
+    f = fftfreq(N, d=1.0/fs)
+    
+    mask = f >= 0
+    f, S = f[mask], S[mask]
+    
+    S_mag = np.abs(S) / N
+    S_mag[1:] *= 2
+    
+    # ← Conversion en dB, np.maximum évite log(0)
+    S_dB = 20 * np.log10(np.maximum(S_mag, 1e-12))
+    
+    if fmax is not None:
+        idx = f <= fmax
+        f, S_dB = f[idx], S_dB[idx]
+    idx = f >= fmin
+    f, S_dB = f[idx], S_dB[idx]
+    
+    plt.figure(figsize=(8, 4))
+    plt.plot(f, S_dB)
+    plt.xlabel("Fréquence (Hz)")
+    plt.ylabel("Amplitude (dB)")  # ← en dB, plus standard en télécom
+    plt.ylim(ylim)
+    plt.title(title)
+    plt.grid(True)
+    plt.show()
+    plt.close()
+
+#%% BPSK
 
 def nrz_encoder(ak,L):
     """
@@ -42,18 +77,18 @@ def simu_bpsk(ak,SNRbdB,L,fc):
     
     s_p = np.cos(2*np.pi*fc*t) #signal de la porteuse
     
-    sfft(s_p,fs,fmax=200)
+    sfft(s_p,fs,fmax=200,title="s_p")
     
     s=s_bb*s_p 
     
     a_signal(s_bb[0:L*10],t[0:L*10],"s_bb")
     a_signal(s[0:L*10],t[0:L*10],"s")
     
-    sfft(s[0:L*10],fs,fmax=fc*2)
+    sfft(s,fs,fmax=fc*2,title='s')
     
     r = awgn(s,SNRbdB,L) #on récupère le signal bruité
     
-    sfft(r[0:L*10],fs,fmax=fc*2)
+    sfft(r,fs,fmax=fc*2,title='r')
     
     r_bb=r*s_p #on convertit en bb en supposant le récepteur synchrone
     
@@ -130,7 +165,7 @@ def awgn(s,SNRbdB,L):
     
 
 
-#%%
+#%% QPSK
 
 def qpsk_mod(ak,fc,L):
     I = ak[0::2] #on récup les bits pairs, (0:(fin):pas=2)
@@ -143,7 +178,7 @@ def qpsk_mod(ak,fc,L):
     
     return I,Q,t
 
-def qpsk_demod(r,fc,L):
+def qpsk_demod(r,fc,L,graph=False):
     fs=L*fc
     t = np.arange(len(r))/fs 
     I = r * np.cos(2*np.pi*fc*t)
@@ -158,7 +193,7 @@ def qpsk_demod(r,fc,L):
     I = I[L-1::L]
     Q = Q[L-1::L]
     
-    constellation_graph(I+1j*Q,'constellation QPSK')
+    if graph: constellation_graph(I+1j*Q,'constellation QPSK')
     
     ak_r = np.zeros(2*len(I))
     ak_r[0::2] = (I>0)
@@ -196,7 +231,7 @@ def simu_qpsk(ak,SNRbdB,L,fc):
     
     
     print('SNRsdB : ',SNRsdB,'dB')
-    return BER,ak_r
+    return BER,np.sum(ak!=ak_r)
 
 def simu_qpsk_nog(ak,SNRbdB,L,fc):
     """
@@ -225,25 +260,120 @@ def simu_qpsk_nog(ak,SNRbdB,L,fc):
 
 
 
-#%%
+#%% ASK
+
+def ask_mod(ak,L):
+    """L est l'oversampling factor (ratio fs/fc) -> nbre d'échatillion pour le codage d'un bit"""
+    # générer le nrz est suffisant car déphaser de pi reveviens à multiplier par -1
+    # à montrer mathématiquement
+    
+    s_bb=[]
+    for a in ak:
+        s_bb+=L*[a] 
+    t = np.arange(len(ak)*L) #échelle de temps
+    return np.array(s_bb),t
+
+def ask_demod(r_bb,L):
+    x = np.real(r_bb) # signal recu
+    x = np.convolve(x,[1]*L) #on intègre sur la durée d'1 bit
+    x = x[L-1:-1:L] # I arm - sample at every L
+    #print(x)
+    #print("piqndinqzdizpqn")
+    ak_r = (x > 0.5).transpose() # threshold detector
+    return ak_r,x
+
+def simu_ask(ak,SNRbdB,L,fc):
+    fs=fc*L #on def la freqc de sampling
+    BER = 0
+    (s_bb,t)=ask_mod(ak,L) #on récupère le signal modulé
+    t=t/fs #passage temps discret à temps réel
+    
+    s_p = np.cos(2*np.pi*fc*t) #signal de la porteuse
+    
+    sfft(s_p,fs,fmax=200,title="s_p")
+    
+    s=s_bb*s_p 
+    
+    a_signal(s_bb[0:L*10],t[0:L*10],"s_bb")
+    a_signal(s[0:L*10],t[0:L*10],"s")
+    
+    sfft(s,fs,fmax=fc*2,title='s')
+    
+    r = awgn(s,SNRbdB,L) #on récupère le signal bruité
+    
+    sfft(r,fs,fmax=fc*2,title='r')
+    
+    r_bb=r*s_p #on convertit en bb en supposant le récepteur synchrone
+    
+    #par la double multi par la porteuse on multiplie par 0.5*L
+    #quand on intègre, d'où la correction CF p9
+    r_bb /= 0.5*L
+    
+    ak_r,x = ask_demod(r_bb, L) #démodulation
+    
+    constellation_graph(x)
+    
+    BER = np.sum(ak!=ak_r)/len(ak)
+    
+    
+    a_signal(r[0:L*10],t[0:L*10],"r")
+    a_signal(r_bb[0:L*10],t[0:L*10],"r_bb")
+    
+    return BER,
+
+def simu_ask_nog(ak,SNRbdB,L,fc):
+    fs=fc*L #on def la freqc de sampling
+    BER = 0
+    (s_bb,t)=ask_mod(ak,L) #on récupère le signal modulé
+    t=t/fs #passage temps discret à temps réel
+    
+    s_p = np.cos(2*np.pi*fc*t) #signal de la porteuse
+    
+    s=s_bb*s_p 
+    
+    r = awgn(s,SNRbdB,L) #on récupère le signal bruité
+    
+    r_bb=r*s_p #on convertit en bb en supposant le récepteur synchrone
+    
+    #par la double multi par la porteuse on multiplie par 0.5*L
+    #quand on intègre, d'où la correction CF p9
+    r_bb /= 0.5*L
+    
+    ak_r,x = ask_demod(r_bb, L) #démodulation
+    
+    BER = np.sum(ak!=ak_r)/len(ak)
+    
+    return BER
+
+
+#%% Simu ASK
 
 ak=np.random.randint(2,size=int(100000))
 fc=100
-ber,ak_r=simu_bpsk(ak, 10, 64, fc) #SNRbdB
+ber,ak_r=simu_ask(ak, 100, 64, fc) #SNRbdB
 print(ber)
 
-#%%
+
+#%% Simu BPSK
+
+ak=np.random.randint(2,size=int(10000))
+fc=100
+ber,ak_r=simu_bpsk(ak, 2, 16, 4) #SNRbdB
+print(ber)
+
+#%% Simu QPSK
 
 ak=np.random.randint(2,size=int(100000))
 fc=100
-ber,ak_r=simu_qpsk(ak, 8, 64, fc) #SNRbdB
+ber,ak_r=simu_qpsk(ak, 10, 64, fc) #SNRbdB
 print(ber)
 
-#%%
+#%% Graph BER BPSK QPSK
 
 l_SNRbdB = range(-4,14,2)
 BER_bpsk = []
 BER_qpsk = []
+BER_ask = []
 
 ak=np.random.randint(2,size=int(10e4))
 fc=100
@@ -251,53 +381,20 @@ fc=100
 for SNRbdB in l_SNRbdB:
     BER_bpsk.append(float(simu_bpsk_nog(ak, SNRbdB, 16, fc)))
     BER_qpsk.append(float(simu_qpsk_nog(ak, SNRbdB, 16, fc)))
+    BER_ask.append(float(simu_ask_nog(ak, SNRbdB, 16, fc)))
     print(SNRbdB)
 
 plt.plot(l_SNRbdB,BER_bpsk)
 plt.plot(l_SNRbdB,BER_qpsk)
+plt.plot(l_SNRbdB,BER_ask)
 plt.yscale('log')
 plt.show()
 
+
 #%%
-
-from scipy.fft import fft, fftfreq
-
-def sfft(signal, fs, fmax=None,fmin=0):
-    N = len(signal)
-
-    # FFT
-    S = fft(signal)
-
-    # Axe fréquence (Hz)
-    f = fftfreq(N, d=1/fs)
-
-    # Partie positive
-    mask = f >= 0
-    f = f[mask]
-    S = S[mask]
-
-    # Module normalisé
-    S_mag = np.abs(S) / N
-
-    # Option : spectre simple face (×2 sauf DC)
-    S_mag[1:] *= 2
-
-    # Limite fréquentielle
-    if fmax is not None:
-        idx = f <= fmax
-        f = f[idx]
-        S_mag = S_mag[idx]
-    
-    idx = f >= fmin
-    f = f[idx]
-    S_mag = S_mag[idx]
-
-    plt.figure(figsize=(8,4))
-    plt.plot(f, S_mag)
-    plt.yscale("log")
-    plt.xlabel("Fréquence (Hz)")
-    plt.ylabel("Amplitude")
-    plt.title("Spectre (fréquences positives)")
-    plt.grid(True)
-    plt.show()
+res = []
+for i in range(50):
+    ak=np.random.randint(2,size=int(100000))
+    if i%10 == 0 : print(i)
+    res.append(float(simu_qpsk_nog(ak, 10, 64, 100)))
 

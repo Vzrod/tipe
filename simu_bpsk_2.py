@@ -54,10 +54,15 @@ def nrz_encoder(ak,L):
         s+=L*[2*a-1] 
     return np.array(s)
 
-def bpsk_mod(ak,L):
+def bpsk_mod(ak,Lc,Nc):
     """L est l'oversampling factor (ratio fs/fc) -> nbre d'échatillion pour le codage d'un bit"""
+    #Lc : nb échantillion par période de la porteuse
+    #Nc : nb de période de la porteuse par bit 
+    
     # générer le nrz est suffisant car déphaser de pi reveviens à multiplier par -1
     # à montrer mathématiquement
+    
+    L=Lc*Nc
     s_bb = nrz_encoder(ak, L) #signal en bande de base (1 bit sur une durée 1*L)
     t = np.arange(len(ak)*L) #échelle de temps
     return s_bb,t
@@ -69,10 +74,13 @@ def bpsk_demod(r_bb,L):
     ak_r = (x > 0).transpose() # threshold detector
     return ak_r,x
 
-def simu_bpsk(ak,SNRbdB,L,fc):
-    fs=fc*L #on def la freqc de sampling
+def simu_bpsk(ak,SNRbdB,Lc,Nc,fc):
+    L=Lc*Nc  #nombre d'échantillions par bit
+    
+    fs=fc*Lc #on def la freqc de sampling
+    Rb = fc/Nc #débit binaire Rb = 1/Tb
     BER = 0
-    (s_bb,t)=bpsk_mod(ak,L) #on récupère le signal modulé
+    (s_bb,t)=bpsk_mod(ak,Lc,Nc) #on récupère le signal modulé
     t=t/fs #passage temps discret à temps réel
     
     s_p = np.cos(2*np.pi*fc*t) #signal de la porteuse
@@ -81,8 +89,8 @@ def simu_bpsk(ak,SNRbdB,L,fc):
     
     s=s_bb*s_p 
     
-    a_signal(s_bb[0:L*10],t[0:L*10],"s_bb")
-    a_signal(s[0:L*10],t[0:L*10],"s")
+    a_signal(s_bb[0:L*5],t[0:L*5],"s_bb")
+    a_signal(s[0:L*5],t[0:L*5],"s")
     
     sfft(s,fs,fmax=fc*2,title='s')
     
@@ -103,8 +111,8 @@ def simu_bpsk(ak,SNRbdB,L,fc):
     BER = np.sum(ak!=ak_r)/len(ak)
     
     
-    a_signal(r[0:L*10],t[0:L*10],"r")
-    a_signal(r_bb[0:L*10],t[0:L*10],"r_bb")
+    a_signal(r[0:L*5],t[0:L*5],"r")
+    a_signal(r_bb[0:L*5],t[0:L*5],"r_bb")
     
     return BER,x
 
@@ -356,16 +364,21 @@ print(ber)
 
 #%% Simu BPSK
 
-ak=np.random.randint(2,size=int(10000))
+ak=np.random.randint(2,size=int(100000))
 fc=100
-ber,ak_r=simu_bpsk(ak, 2, 16, 4) #SNRbdB
+Lc=16 #Res porteuse
+Nc=4 #1bit = 4periodes de la porteuse
+SNRbdB=4
+ber,ak_r=simu_bpsk(ak,SNRbdB,Lc,Nc,fc) #SNRbdB
 print(ber)
+
+#On remarque que meme en augmentant Nc (bit plus long) le BER ne change pas
 
 #%% Simu QPSK
 
 ak=np.random.randint(2,size=int(100000))
 fc=100
-ber,ak_r=simu_qpsk(ak, 10, 64, fc) #SNRbdB
+ber,ak_r=simu_qpsk(ak, 4, 64, fc) #SNRbdB
 print(ber)
 
 #%% Graph BER BPSK QPSK
@@ -391,10 +404,20 @@ plt.yscale('log')
 plt.show()
 
 
-#%%
-res = []
-for i in range(50):
-    ak=np.random.randint(2,size=int(100000))
-    if i%10 == 0 : print(i)
-    res.append(float(simu_qpsk_nog(ak, 10, 64, 100)))
+#%% graph BPSK fct Nc
 
+BER = []
+Nc = [1,2,4,6,8]
+
+fc=100
+Lc=16 #Res porteuse
+SNRbdB=4
+
+for N in Nc:
+    ak=np.random.randint(2,size=int(100000))
+    ber,ak_r=simu_bpsk(ak,SNRbdB,Lc,N,fc) #SNRbdB
+    BER.append(ber)
+    print(ber)
+
+plt.plot(Nc,BER)
+plt.show()

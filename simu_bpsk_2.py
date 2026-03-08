@@ -119,7 +119,7 @@ def simu_bpsk(ak,SNRbdB,Lc,Nc,fc):
 def simu_bpsk_nog(ak,SNRbdB,L,fc):
     fs=fc*L #on def la freqc de sampling
     BER = 0
-    (s_bb,t)=bpsk_mod(ak,L) #on récupère le signal modulé
+    (s_bb,t)=bpsk_mod(ak,L,1) #on récupère le signal modulé
     t=t/fs #passage temps discret à temps réel
     
     s_p = np.cos(2*np.pi*fc*t) #signal de la porteuse
@@ -138,7 +138,7 @@ def simu_bpsk_nog(ak,SNRbdB,L,fc):
     
     x.astype(complex)
     
-    constellation_graph(x)
+    #constellation_graph(x)
     
     BER = np.sum(ak!=ak_r)/len(ak)
     
@@ -383,18 +383,30 @@ print(ber)
 
 #%% Graph BER BPSK QPSK
 
-l_SNRbdB = range(-4,14,2)
+l_SNRbdB = range(-4,14,6)
 BER_bpsk = []
 BER_qpsk = []
 BER_ask = []
 
-ak=np.random.randint(2,size=int(10e4))
+
 fc=100
 
 for SNRbdB in l_SNRbdB:
-    BER_bpsk.append(float(simu_bpsk_nog(ak, SNRbdB, 16, fc)))
-    BER_qpsk.append(float(simu_qpsk_nog(ak, SNRbdB, 16, fc)))
-    BER_ask.append(float(simu_ask_nog(ak, SNRbdB, 16, fc)))
+    m_BPSK=0
+    m_QPSK=0
+    m_ASK=0
+    for i in range(100):
+        ak=np.random.randint(2,size=int(10000))
+        m_BPSK+=float(simu_bpsk_nog(ak, SNRbdB, 16, fc))
+        m_QPSK+=float(simu_qpsk_nog(ak, SNRbdB, 16, fc))
+        m_ASK+=float(simu_ask_nog(ak, SNRbdB, 16, fc))
+        print(i)
+    m_BPSK/=100
+    m_QPSK/=100
+    m_ASK/=100
+    BER_bpsk.append(m_BPSK)
+    BER_qpsk.append(m_QPSK)
+    BER_ask.append(m_ASK)
     print(SNRbdB)
 
 plt.plot(l_SNRbdB,BER_bpsk)

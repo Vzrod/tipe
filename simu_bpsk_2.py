@@ -13,7 +13,7 @@ from scipy.special import erfc
 
 from scipy.fft import fft, fftfreq
 
-def sfft(signal, fs, fmax=None, fmin=0, ylim=(-80, 10), title="Spectre"):
+def sfft(signal, fs, fmax=None, fmin=0, ylim=(-80, 10), title="Spectre",legend=None):
     N = len(signal)
     S = fft(signal)
     f = fftfreq(N, d=1.0/fs)
@@ -24,7 +24,6 @@ def sfft(signal, fs, fmax=None, fmin=0, ylim=(-80, 10), title="Spectre"):
     S_mag = np.abs(S) / N
     S_mag[1:] *= 2
     
-    # ← Conversion en dB, np.maximum évite log(0)
     S_dB = 20 * np.log10(np.maximum(S_mag, 1e-12))
     
     if fmax is not None:
@@ -34,16 +33,20 @@ def sfft(signal, fs, fmax=None, fmin=0, ylim=(-80, 10), title="Spectre"):
     f, S_dB = f[idx], S_dB[idx]
     
     plt.figure(figsize=(8, 4))
-    plt.plot(f, S_dB)
+    plt.plot(f, S_dB,label=legend)
     plt.xlabel("Fréquence (Hz)")
-    plt.ylabel("Amplitude (dB)")  # ← en dB, plus standard en télécom
+    plt.ylabel("Amplitude (dB)")
     plt.ylim(ylim)
-    plt.title(title)
+    plt.title(title)  
     plt.grid(True)
+    plt.legend(loc="upper right",handlelength=0,handletextpad=0)
     plt.show()
     plt.close()
 
 #%% BPSK
+
+def legend_params(SNRbdB, Lc, Nc, fc):
+    return f"SNRbdB={SNRbdB}\nNc={Nc}\nfc={fc}"
 
 def nrz_encoder(ak,L):
     """
@@ -68,14 +71,14 @@ def bpsk_mod(ak,Lc,Nc):
     return s_bb,t
 
 def bpsk_demod(r_bb,L):
-    x = np.real(r_bb) # signal recu
-    x = np.convolve(x,[1]*L) #on intègre sur la durée d'1 bit
-    x = x[L-1:-1:L] # I arm - sample at every L
-    ak_r = (x > 0).transpose() # threshold detector
-    return ak_r,x
+    r_bb = np.convolve(r_bb,[1]*L) #on intègre sur la durée d'1 bit
+    r_bb = r_bb[L-1:-1:L] #on recup la val de l'intégrale qui est toute les L valeurs 
+    ak_r = (r_bb > 0).transpose() # threshold detector
+    return ak_r,r_bb
 
 def simu_bpsk(ak,SNRbdB,Lc,Nc,fc):
     L=Lc*Nc  #nombre d'échantillions par bit
+    legend=legend_params(SNRbdB, Lc, Nc, fc)
     
     fs=fc*Lc #on def la freqc de sampling
     Rb = fc/Nc #débit binaire Rb = 1/Tb
@@ -85,18 +88,18 @@ def simu_bpsk(ak,SNRbdB,Lc,Nc,fc):
     
     s_p = np.cos(2*np.pi*fc*t) #signal de la porteuse
     
-    sfft(s_p,fs,fmax=200,title="s_p")
+    sfft(s_p,fs,fmax=200,title="Spectre du signal en bande de base BPSK",legend=legend)
     
     s=s_bb*s_p 
     
-    a_signal(s_bb[0:L*5],t[0:L*5],"s_bb")
-    a_signal(s[0:L*5],t[0:L*5],"s")
+    a_signal(s_bb[0:L*10],t[0:L*10],title="Signal en bande de base BPSK",xa="Temps (s)",legend=legend)
+    a_signal(s[0:L*10],t[0:L*10],title="Signal modulé BPSK", xa="Temps (s)",legend=legend)
     
-    sfft(s,fs,fmax=fc*2,title='s')
+    sfft(s,fs,fmax=fc*2,title='Spectre du signal modulé BPSK',legend=legend)
     
     r = awgn(s,SNRbdB,L) #on récupère le signal bruité
     
-    sfft(r,fs,fmax=fc*2,title='r')
+    sfft(r,fs,fmax=fc*2,title='Spectre du signal bruité BPSK',legend=legend)
     
     r_bb=r*s_p #on convertit en bb en supposant le récepteur synchrone
     
@@ -111,8 +114,8 @@ def simu_bpsk(ak,SNRbdB,Lc,Nc,fc):
     BER = np.sum(ak!=ak_r)/len(ak)
     
     
-    a_signal(r[0:L*5],t[0:L*5],"r")
-    a_signal(r_bb[0:L*5],t[0:L*5],"r_bb")
+    a_signal(r[0:L*5],t[0:L*5],title="Signal bruité BPSK", xa="Temps (s)",legend=legend)
+    a_signal(r_bb[0:L*5],t[0:L*5],title="Signal démodulé BPSK", xa="Temps (s)",legend=legend)
     
     return BER,x
 
@@ -144,13 +147,16 @@ def simu_bpsk_nog(ak,SNRbdB,L,fc):
     
     return BER
 
-def a_signal(s,t,title=""):
-    plt.plot(t,s)
+def a_signal(s,t,title="",xa="",ya="",legend=None):
+    plt.plot(t,s,label=legend)
     plt.title(title)
+    plt.xlabel(xa)
+    plt.ylabel(ya)
+    plt.legend(loc="upper right",handlelength=0,handletextpad=0)
     plt.show()
     plt.close()
     
-def constellation_graph(s, title=""):
+def constellation_graph(s, title="Constellation graph"):
     X,Y=s.real,s.imag
     plt.scatter(X,Y)
     plt.title(title)
@@ -230,7 +236,7 @@ def simu_qpsk(ak,SNRbdB,L,fc):
     
     r = awgn(s,SNRsdB,L) #on récupère le signal bruité
     
-    ak_r = qpsk_demod(r, fc, L) #démodulation
+    ak_r = qpsk_demod(r, fc, L,graph=True) #démodulation
         
     BER = np.sum(ak!=ak_r)/len(ak)
     
@@ -302,8 +308,8 @@ def simu_ask(ak,SNRbdB,L,fc):
     
     s=s_bb*s_p 
     
-    a_signal(s_bb[0:L*10],t[0:L*10],"s_bb")
-    a_signal(s[0:L*10],t[0:L*10],"s")
+    a_signal(s_bb[0:L*5],t[0:L*5],"s_bb")
+    a_signal(s[0:L*5],t[0:L*5],"s")
     
     sfft(s,fs,fmax=fc*2,title='s')
     
@@ -324,8 +330,8 @@ def simu_ask(ak,SNRbdB,L,fc):
     BER = np.sum(ak!=ak_r)/len(ak)
     
     
-    a_signal(r[0:L*10],t[0:L*10],"r")
-    a_signal(r_bb[0:L*10],t[0:L*10],"r_bb")
+    a_signal(r[0:L*5],t[0:L*5],"r")
+    a_signal(r_bb[0:L*5],t[0:L*5],"r_bb")
     
     return BER,
 
@@ -357,18 +363,29 @@ def simu_ask_nog(ak,SNRbdB,L,fc):
 #%% Simu ASK
 
 ak=np.random.randint(2,size=int(100000))
-fc=100
-ber,ak_r=simu_ask(ak, 100, 64, fc) #SNRbdB
+ak[0]=0
+ak[1]=0
+ak[2]=1
+ak[3]=1
+ak[4]=0
+fc=200
+ber=simu_ask(ak, 20, 16, fc) #SNRbdB
 print(ber)
 
+#! -> unité ordonnée r_bb graph 
 
 #%% Simu BPSK
 
 ak=np.random.randint(2,size=int(100000))
+ak[0]=1
+ak[1]=0
+ak[2]=1
+ak[3]=0
+ak[4]=1
 fc=100
 Lc=16 #Res porteuse
-Nc=4 #1bit = 4periodes de la porteuse
-SNRbdB=4
+Nc=1 #1bit = 4periodes de la porteuse
+SNRbdB=20   
 ber,ak_r=simu_bpsk(ak,SNRbdB,Lc,Nc,fc) #SNRbdB
 print(ber)
 
@@ -377,8 +394,9 @@ print(ber)
 #%% Simu QPSK
 
 ak=np.random.randint(2,size=int(100000))
+
 fc=100
-ber,ak_r=simu_qpsk(ak, 4, 64, fc) #SNRbdB
+ber,ak_r=simu_qpsk(ak, 20, 64, fc) #SNRbdB
 print(ber)
 
 #%% Graph BER BPSK QPSK

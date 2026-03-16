@@ -76,7 +76,7 @@ def bpsk_demod(r_bb,L):
     ak_r = (r_bb > 0).transpose() # threshold detector
     return ak_r,r_bb
 
-def simu_bpsk(ak,SNRbdB,Lc,Nc,fc):
+def simu_bpsk(ak,SNRbdB,Lc,Nc,fc,a=0,tau=0):
     L=Lc*Nc  #nombre d'échantillions par bit
     legend=legend_params(SNRbdB, Lc, Nc, fc)
     
@@ -85,6 +85,8 @@ def simu_bpsk(ak,SNRbdB,Lc,Nc,fc):
     BER = 0
     (s_bb,t)=bpsk_mod(ak,Lc,Nc) #on récupère le signal modulé
     t=t/fs #passage temps discret à temps réel
+    dt = 1/fs #pas temporel
+    print(dt)
     
     s_p = np.cos(2*np.pi*fc*t) #signal de la porteuse
     
@@ -92,12 +94,16 @@ def simu_bpsk(ak,SNRbdB,Lc,Nc,fc):
     
     s=s_bb*s_p 
     
-    a_signal(s_bb[0:L*10],t[0:L*10],title="Signal en bande de base BPSK",xa="Temps (s)",legend=legend)
-    a_signal(s[0:L*10],t[0:L*10],title="Signal modulé BPSK", xa="Temps (s)",legend=legend)
+    a_signal(s_bb[0:L*5],t[0:L*5],title="Signal en bande de base BPSK",xa="Temps (s)",legend=legend)
+    a_signal(s[0:L*5],t[0:L*5],title="Signal modulé BPSK", xa="Temps (s)",legend=legend)
     
     sfft(s,fs,fmax=fc*2,title='Spectre du signal modulé BPSK',legend=legend)
     
-    r = awgn(s,SNRbdB,L) #on récupère le signal bruité
+    r = fading(s,a,tau,dt)
+    
+    r = awgn(r,SNRbdB,L) #on récupère le signal bruité
+    a_signal(r[0:L*5],t[0:L*5],title="Signal bruité BPSK", xa="Temps (s)",legend=legend)
+
     
     sfft(r,fs,fmax=fc*2,title='Spectre du signal bruité BPSK',legend=legend)
     
@@ -114,22 +120,24 @@ def simu_bpsk(ak,SNRbdB,Lc,Nc,fc):
     BER = np.sum(ak!=ak_r)/len(ak)
     
     
-    a_signal(r[0:L*5],t[0:L*5],title="Signal bruité BPSK", xa="Temps (s)",legend=legend)
     a_signal(r_bb[0:L*5],t[0:L*5],title="Signal démodulé BPSK", xa="Temps (s)",legend=legend)
     
     return BER,x
 
-def simu_bpsk_nog(ak,SNRbdB,L,fc):
+def simu_bpsk_nog(ak,SNRbdB,L,fc,a=0,tau=0):
     fs=fc*L #on def la freqc de sampling
     BER = 0
     (s_bb,t)=bpsk_mod(ak,L,1) #on récupère le signal modulé
     t=t/fs #passage temps discret à temps réel
+    dt=1/fs
     
     s_p = np.cos(2*np.pi*fc*t) #signal de la porteuse
     
     s=s_bb*s_p 
     
     r = awgn(s,SNRbdB,L) #on récupère le signal bruité
+    
+    r = fading(r, a, tau, dt)
     
     r_bb=r*s_p #on convertit en bb en supposant le récepteur synchrone
     
@@ -177,6 +185,14 @@ def awgn(s,SNRbdB,L):
     r = s + np.sqrt(N0/2)*np.random.standard_normal(len(s)) #expliquer le sqrt(N0/2)
     return r
     
+def fading(s,a,tau,dt):
+    """On simule un rebond du signal avec une onde réfléchie s'ajoutant au signal principal (chemin
+    direct). a % de réflexion et tau le retard de l'onde réfléchie en s"""
+    
+    #
+    r = (1-a)*s + a*(np.concatenate((np.zeros(int(tau/dt)),s)))[0:s.shape[0]] #on cut la fin du signal rebondi
+    return r
+
 
 
 #%% QPSK
@@ -380,16 +396,18 @@ ak=np.random.randint(2,size=int(100000))
 ak[0]=1
 ak[1]=0
 ak[2]=1
-ak[3]=0
+ak[3]=1
 ak[4]=1
 fc=100
 Lc=16 #Res porteuse
 Nc=1 #1bit = 4periodes de la porteuse
-SNRbdB=20   
-ber,ak_r=simu_bpsk(ak,SNRbdB,Lc,Nc,fc) #SNRbdB
+SNRbdB=1000
+ber,ak_r=simu_bpsk(ak,SNRbdB,Lc,Nc,fc,a=0.5,tau=0.000625*8) #SNRbdB
+#ber2=simu_bpsk_nog(ak,SNRbdB,Lc,fc,a=0.5,tau=0.000625*8) #SNRbdB
 print(ber)
 
 #On remarque que meme en augmentant Nc (bit plus long) le BER ne change pas
+#WTF à chaque décalage d'un bit on double le w du sin card
 
 #%% Simu QPSK
 
@@ -451,3 +469,11 @@ for N in Nc:
 
 plt.plot(Nc,BER)
 plt.show()
+
+#%% graph BPSK Fading fct 
+
+l_BER = []
+for i in range(0,20):
+    ak=np.random.randint(2,size=int(100000))
+    l_BER.append(simu_bpsk_nog(ak,SNRbdB,Lc,fc,a=0.7,tau=0.000625*i))
+    print(i)

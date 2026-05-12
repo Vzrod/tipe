@@ -42,11 +42,66 @@ def sfft(signal, fs, fmax=None, fmin=0, ylim=(-80, 10), title="Spectre",legend=N
     plt.legend(loc="upper right",handlelength=0,handletextpad=0)
     plt.show()
     plt.close()
-
-#%% BPSK
+    
+#%% Focntions de bases 
 
 def legend_params(SNRbdB, Lc, Nc, fc):
     return f"SNRbdB={SNRbdB}\nNc={Nc}\nfc={fc}"
+
+
+def a_signal(s,t,title="",xa="",ya="",legend=None):
+    plt.plot(t,s,label=legend)
+    plt.title(title)
+    plt.xlabel(xa)
+    plt.ylabel(ya)
+    plt.legend(loc="upper right",handlelength=0,handletextpad=0)
+    plt.show()
+    plt.close()
+    
+def constellation_graph(s, title="Constellation graph"):
+    X,Y=s.real,s.imag
+    plt.scatter(X,Y)
+    plt.title(title)
+    plt.show()
+    plt.close()
+    
+
+def awgn(s,SNRbdB,L):
+    
+    SNRb = 10**(SNRbdB/10) #SNR par bit
+    
+    Ps = sum(np.abs(s)**2)/len(s) #Puissance du signal facteur 
+    
+    Eb = Ps * L #ie un bit est étalé sur un temps L
+    
+    N0 = Eb/SNRb #densité spectrale de bruit
+    
+    r = s + np.sqrt(N0/2)*np.random.standard_normal(len(s)) #expliquer le sqrt(N0/2)
+    return r
+    
+def fading(s,a,tau,dt):
+    """On simule un rebond du signal avec une onde réfléchie s'ajoutant au signal principal (chemin
+    direct). a % de réflexion et tau le retard de l'onde réfléchie en s"""
+    
+    #
+    r = (1-a)*s + a*(np.concatenate((np.zeros(int(tau/dt)),s)))[0:s.shape[0]] #on cut la fin du signal rebondi
+    return r
+
+def rayleigh_fading(s, L, omega=1.0):
+    """
+    Flat slow fading : 1 coefficient alpha par bit (cohérence > T_b)
+    omega = E[alpha^2] = puissance moyenne du canal A VERIFIER
+    """
+    Nb = len(s) // L
+    sigma = np.sqrt(omega / 2)
+    X = sigma * np.random.randn(Nb)
+    Y = sigma * np.random.randn(Nb)
+    alpha = np.sqrt(X**2 + Y**2)          # Rayleigh, sans complexes
+    alpha_exp = np.repeat(alpha, L)[:len(s)]
+    return alpha_exp * s
+
+
+#%% BPSK
 
 def nrz_encoder(ak,L):
     """
@@ -99,9 +154,11 @@ def simu_bpsk(ak,SNRbdB,Lc,Nc,fc,a=0,tau=0):
     
     sfft(s,fs,fmax=fc*2,title='Spectre du signal modulé BPSK',legend=legend)
     
-    r = fading(s,a,tau,dt)
+    #r = fading(s,a,tau,dt)
+
+    r = rayleigh_fading(s, L, omega=1)
     
-    r = awgn(r,SNRbdB,L) #on récupère le signal bruité
+    r = awgn(s,SNRbdB,L) #on récupère le signal bruité
     a_signal(r[0:L*5],t[0:L*5],title="Signal bruité BPSK", xa="Temps (s)",legend=legend)
 
     
@@ -135,9 +192,13 @@ def simu_bpsk_nog(ak,SNRbdB,L,fc,a=0,tau=0):
     
     s=s_bb*s_p 
     
-    r = awgn(s,SNRbdB,L) #on récupère le signal bruité
+    r_faded = rayleigh_fading(s, L, omega=1.0)
     
-    r = fading(r, a, tau, dt)
+    r = awgn(r_faded,SNRbdB,L) #on récupère le signal bruité
+    
+    #r = fading(r, a, tau, dt)
+    
+    
     
     r_bb=r*s_p #on convertit en bb en supposant le récepteur synchrone
     
@@ -155,43 +216,7 @@ def simu_bpsk_nog(ak,SNRbdB,L,fc,a=0,tau=0):
     
     return BER
 
-def a_signal(s,t,title="",xa="",ya="",legend=None):
-    plt.plot(t,s,label=legend)
-    plt.title(title)
-    plt.xlabel(xa)
-    plt.ylabel(ya)
-    plt.legend(loc="upper right",handlelength=0,handletextpad=0)
-    plt.show()
-    plt.close()
-    
-def constellation_graph(s, title="Constellation graph"):
-    X,Y=s.real,s.imag
-    plt.scatter(X,Y)
-    plt.title(title)
-    plt.show()
-    plt.close()
-    
 
-def awgn(s,SNRbdB,L):
-    
-    SNRb = 10**(SNRbdB/10) #SNR par bit
-    
-    Ps = sum(np.abs(s)**2)/len(s) #Puissance du signal facteur 
-    
-    Eb = Ps * L #ie un bit est étalé sur un temps L
-    
-    N0 = Eb/SNRb #densité spectrale de bruit
-    
-    r = s + np.sqrt(N0/2)*np.random.standard_normal(len(s)) #expliquer le sqrt(N0/2)
-    return r
-    
-def fading(s,a,tau,dt):
-    """On simule un rebond du signal avec une onde réfléchie s'ajoutant au signal principal (chemin
-    direct). a % de réflexion et tau le retard de l'onde réfléchie en s"""
-    
-    #
-    r = (1-a)*s + a*(np.concatenate((np.zeros(int(tau/dt)),s)))[0:s.shape[0]] #on cut la fin du signal rebondi
-    return r
 
 
 
@@ -401,7 +426,7 @@ ak[4]=1
 fc=100
 Lc=16 #Res porteuse
 Nc=1 #1bit = 4periodes de la porteuse
-SNRbdB=1000
+SNRbdB=4
 ber,ak_r=simu_bpsk(ak,SNRbdB,Lc,Nc,fc,a=0.5,tau=0.000625*8) #SNRbdB
 #ber2=simu_bpsk_nog(ak,SNRbdB,Lc,fc,a=0.5,tau=0.000625*8) #SNRbdB
 print(ber)
@@ -419,7 +444,7 @@ print(ber)
 
 #%% Graph BER BPSK QPSK
 
-l_SNRbdB = range(-4,14,6)
+l_SNRbdB = range(-4,20,1)
 BER_bpsk = []
 BER_qpsk = []
 BER_ask = []
@@ -431,7 +456,7 @@ for SNRbdB in l_SNRbdB:
     m_BPSK=0
     m_QPSK=0
     m_ASK=0
-    for i in range(100):
+    for i in range(10):
         ak=np.random.randint(2,size=int(10000))
         m_BPSK+=float(simu_bpsk_nog(ak, SNRbdB, 16, fc))
         m_QPSK+=float(simu_qpsk_nog(ak, SNRbdB, 16, fc))

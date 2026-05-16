@@ -10,54 +10,46 @@ import matplotlib.pyplot as plt
 from scipy.fft import fft, fftfreq
 
 
-# =============================================================
-# Fonctions de bases réutilisables
-# =============================================================
+#%% Fonctions de bases
 
 def nrz_encoder(sym, L):
-    """Étale chaque symbole sur L échantillons"""
+    """etale chaque symbole sur L echantillons"""
     return np.repeat(sym, L)
 
 
 def to_passband(s_bb, fc, fs):
-    """Enveloppe complexe -> signal réel passband
-        s(t) = Re{ s_bb(t) * exp(j 2π fc t) } = s_bb(t)*cos(2πfc*t)
+    """signal en baseband complexe -> signal réel passband
     """
     t = np.arange(len(s_bb)) / fs
     return np.real(s_bb * np.exp(1j * 2 * np.pi * fc * t))
 
 
 def to_baseband(r, fc, fs):
-    """Signal réel passband -> enveloppe complexe (non filtrée).
-
-    Multiplication par 2·exp(-j 2π fc t) :
-      - le facteur 2 compense le 1/2 issu de cos·e^{-jωt} = (1 + e^{-j2ωt})/2 ;
-      - le terme à 2fc sera supprimé par le filtre adapté (passe-bas).
-    """
+    """signal réel en pb -> signal complexe en bb"""
     t = np.arange(len(r)) / fs
     return 2.0 * r * np.exp(-1j * 2 * np.pi * fc * t)
 
 
 def demod_filter(r_bb, L):
-    """Filtre adapté rectangulaire (intégrateur sur L échantillons)
-    suivi de l'échantillonnage 1 fois par symbole."""
-    h = np.ones(L) / L #pk pas (1) ????
+    """filtre rectangulaire (intégrateur sur L échantillons)
+    et échantillonnage 1 fois par symbole."""
+    h = np.ones(L) / L
     y = np.convolve(r_bb, h, mode='full')
-    return y[L - 1::L][:len(r_bb) // L]
+    return y[L - 1::L][:len(r_bb) // L] #A détailler
 
 
-def awgn(s, SNRbdB, samples_per_bit):
+def awgn(s, SNRbdB, symb_par_bit):
     """Ajoute un bruit AWGN selon Eb/N0 = SNRbdB dB.
 
     Détecte automatiquement la nature (réelle ou complexe) du signal :
       - réel    : bruit gaussien réel de variance N0/2
-      - complexe: bruit circulaire complexe, N0/2 par composante I et Q
+      - complexe: bruit gaussien réel de variance N0/2 par composante I et Q
 
-    Convention : Eb = Ps · samples_per_bit (énergie par bit = puissance × durée).
+    Calcul : Eb = Ps · symb_par_bit
     """
     SNRb = 10 ** (SNRbdB / 10)
     Ps = np.mean(np.abs(s) ** 2)
-    Eb = Ps * samples_per_bit
+    Eb = Ps * symb_par_bit
     N0 = Eb / SNRb
     sigma = np.sqrt(N0 / 2)
     if np.iscomplexobj(s): #Expliquer pk on stack pas 2 fois le bruit...
@@ -65,76 +57,71 @@ def awgn(s, SNRbdB, samples_per_bit):
     return s + sigma * np.random.randn(len(s))
 
 
-# =============================================================
-# Mapping (bit -> forme adaptée mod)
-# =============================================================
+#%% Mapping
 
-def bpsk_map(bits):
+def bpsk_map(bk):
     """0 → -1+0j ;  1 → +1+0j   (symboles sur l'axe I)."""
-    return (2 * bits - 1).astype(complex)
+    return (2 * bk - 1).astype(complex)
 
-def bpsk_demap(symbols):
-    """Décision : signe de la partie réelle (bras I)."""
-    return (symbols.real > 0).astype(int)
+def bpsk_demap(r_sym):
+    """Décision : signe de la partie réelle (axe I)."""
+    return (r_sym.real > 0).astype(int)
 
 
-def qpsk_map(bits):
-    b = bits.reshape(-1, 2)
-    return ((2*b[:,0]-1) + 1j*(2*b[:,1]-1)) / np.sqrt(2)  # /√2 pour Es=1
+def qpsk_map(bk):
+    b = bk.reshape(-1, 2)
+    return ((2*b[:,0]-1) + 1j*(2*b[:,1]-1)) / np.sqrt(2)  # /sqrt(2) pour Es=1
 
-def qpsk_demap(sym):
-    out = np.zeros(2*len(sym), dtype=int)
-    out[0::2] = (sym.real > 0); out[1::2] = (sym.imag > 0)
+def qpsk_demap(r_sym):
+    out = np.zeros(2*len(r_sym), dtype=int)
+    out[0::2] = (r_sym.real > 0); out[1::2] = (r_sym.imag > 0)
     return out
 
 
+#%% Simu canal modulations linéaires
 
-
-# =============================================================
-# 3) Chaîne complète BPSK
-# =============================================================
-
-def simu_bpsk(bits, SNRbdB, Lc, Nc, fc, plots=True):
+def simu_canal_lin(bk,b2s,s2b,SNRbdB,Lc, Nc, fc, plots=True):
     """
     Paramètres
     ----------
-    bits   : ndarray de 0/1
+    bk   : ndarray de 0/1
     SNRbdB : Eb/N0 en dB
-    Lc     : échantillons par période porteuse (qualité du sinus numérisé)
+    Lc     : échantillons par période porteuse
     Nc     : périodes porteuse par bit         (durée du bit, Rb = fc/Nc)
     fc     : fréquence porteuse (Hz)
 
     Retour
     ------
-    (BER, r_sym)   r_sym : symboles reçus (complexes, 1 par bit)
+    (BER, bk_r)   bk_r : bits reçus
     """
-    L = Lc * Nc           # échantillons par bit
-    fs = Lc * fc          # fréquence d'échantillonnage
+    L=Lc*Nc           # échantillons par bit
+    fs=Lc*fc          # fréquence d'échantillonnage
 
-    # ---------- ÉMETTEUR (tout en complexe) ----------
-    sym  = bpsk_map(bits)             # complexe, 1 par bit (ici Im=0)
-    s_bb = nrz_encoder(sym, L)           # complexe, fs échantillons/s
-    s    = to_passband(s_bb, fc, fs)  # *** RÉEL : signal sur le canal ***
+    ak = b2s(bk) #Mapping
+    s_bb = nrz_encoder(ak, L)     #signal complexe en bb sur-échantillonée
+    s = to_passband(s_bb, fc, fs)  #signal réel mod dans le canal
 
     # ---------- CANAL ----------
-    r = awgn(s, SNRbdB, samples_per_bit=L)        # réel + bruit réel
+    r = awgn(s, SNRbdB, symb_par_bit=L)
+    # ---------------------------
+    
+    r_bb_raw = to_baseband(r, fc, fs)   #signal complexe en bb
+    r_sym = demod_filter(r_bb_raw, L) #filtre intégrateur
+    bk_r = s2b(r_sym)
 
-    # ---------- RÉCEPTEUR (retour en complexe) ----------
-    r_bb_raw = to_baseband(r, fc, fs)             # complexe à partir d'ici
-    r_sym    = demod_filter(r_bb_raw, L) # complexe, 1 par bit
-    bits_r   = bpsk_demap(r_sym)
-
-    BER = np.mean(bits != bits_r)
+    BER = np.mean(bk != bk_r)
 
     if plots:
         _plot_chain(s_bb, s, r, r_sym, fc, fs, L, SNRbdB)
 
-    return BER, r_sym
+    return BER, bk_r
 
 
-# =============================================================
-# 4) Visualisation
-# =============================================================
+#%% Simu BFSK
+
+def 
+
+#%% Graphiques
 
 def _plot_signal(t, s, title, ylabel=""):
     plt.figure(figsize=(8, 3))
@@ -175,18 +162,10 @@ def _plot_chain(s_bb, s, r, r_sym, fc, fs, L, SNRbdB):
     _plot_spectrum(s, fs, fmax=2.5 * fc, title="Spectre du signal passband")
 
 
-# =============================================================
-# 5) Test
-# =============================================================
+#%%
 
-if __name__ == "__main__":
-    np.random.seed(0)
-    bits = np.random.randint(2, size=10_000)
+#np.random.seed(0)
+bk = np.random.randint(2, size=100_000)
 
-    BER, r_sym = simu_bpsk(bits, SNRbdB=8, Lc=16, Nc=1, fc=100, plots=True)
-    print(f"BER simulé : {BER:.4e}")
-
-    # Comparaison à la théorie : BER_BPSK = (1/2) erfc(sqrt(Eb/N0))
-    from scipy.special import erfc
-    EbN0 = 10 ** (8 / 10)
-    print(f"BER théorique : {0.5 * erfc(np.sqrt(EbN0)):.4e}")
+BER, bk_r = simu_canal_lin(bk,bpsk_map,bpsk_demap, SNRbdB=8, Lc=16, Nc=1, fc=100, plots=True)
+print(f"BER simulé : {BER:.4e}")

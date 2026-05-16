@@ -401,6 +401,20 @@ def simu_ask_nog(ak,SNRbdB,L,fc):
     return BER
 
 
+
+#%% BFSK
+
+def bfsk_mod(ak, L, fc):
+    """L = échantillons/bit, f0=fc, f1=2fc (orthogonales sur Tb=1/fc)"""
+    fs = fc * L
+    t = np.arange(len(ak) * L) / fs
+    f_inst = np.repeat(np.where(np.asarray(ak) == 1, 2*fc, fc), L)
+    s = np.cos(2*np.pi * f_inst * t)
+    return s, t
+
+
+
+
 #%% Simu ASK
 
 ak=np.random.randint(2,size=int(100000))
@@ -426,10 +440,10 @@ ak[4]=1
 fc=100
 Lc=16 #Res porteuse
 Nc=1 #1bit = 4periodes de la porteuse
-SNRbdB=4
+SNRbdB=8
 ber,ak_r=simu_bpsk(ak,SNRbdB,Lc,Nc,fc,a=0.5,tau=0.000625*8) #SNRbdB
 #ber2=simu_bpsk_nog(ak,SNRbdB,Lc,fc,a=0.5,tau=0.000625*8) #SNRbdB
-print(ber)
+print(f'{ber:.4e}')
 
 #On remarque que meme en augmentant Nc (bit plus long) le BER ne change pas
 #WTF à chaque décalage d'un bit on double le w du sin card

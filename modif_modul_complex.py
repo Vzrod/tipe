@@ -1,18 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Relation fondamentale :
-        s(t) = Re{ s_bb(t) · e^{j 2π fc t} }
-             = I(t) cos(2π fc t) - Q(t) sin(2π fc t)
+Created on Mon Feb  9 13:32:28 2026
+
+@author: arthu
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.fft import fft, fftfreq
 
-
 #%% Fonctions de bases
 
-d_bit_par_symb={"_16qam_map":4, "bpsk_map":1, "qpsk_map":2,"ask_map":1}
+d_bit_par_symb={"bpsk_map":1,"qpsk_map":2,"ask_map":1,"_16qam_map":4}
 
 def nrz_encoder(sym, L):
     """etale chaque symbole sur L echantillons"""
@@ -38,11 +37,7 @@ def demod_filter(r_bb, L):
     #le 2e slicing garde l'intégration des N=len(r_bb) // L symboles du message
 
 def awgn(s, SNRbdB, bit_par_symb,L):
-    """Ajoute un bruit AWGN selon Eb/N0 = SNRbdB dB.
-
-    Détecte automatiquement la nature (réelle ou complexe) du signal :
-      - réel    : bruit gaussien réel de variance N0/2
-      - complexe: bruit gaussien réel de variance N0/2 par composante I et Q
+    """Ajoute un bruit AWGN selon Eb/N0=SNRb.
     """
     SNRb = 10 ** (SNRbdB / 10)
     Ps = np.mean(np.abs(s) ** 2)
@@ -50,15 +45,13 @@ def awgn(s, SNRbdB, bit_par_symb,L):
     Eb = Es / bit_par_symb
     N0 = Eb / SNRb
     sigma = np.sqrt(N0 / 2)
-    if np.iscomplexobj(s): #Expliquer pk on stack pas 2 fois le bruit...
-        return s + sigma * (np.random.randn(len(s)) + 1j * np.random.randn(len(s)))
     return s + sigma * np.random.randn(len(s))
 
 
 #%% Mapping
 
 def bpsk_map(bk):
-    """0 → -1+0j ;  1 → +1+0j   (symboles sur l'axe I)."""
+    """0 -> -1 et 1 -> +1 (symboles sur l'axe I)."""
     return (2 * bk - 1).astype(complex)
 
 def bpsk_demap(r_sym):
@@ -67,19 +60,44 @@ def bpsk_demap(r_sym):
 
 
 def qpsk_map(bk):
-    b = bk.reshape(-1, 2)
-    return ((2*b[:,0]-1) + 1j*(2*b[:,1]-1)) / np.sqrt(2)  # /sqrt(2) pour Es=1
+    """1 symbole = 2 bits"""
+    n_bits=len(bk)-(len(bk) % 2)
+    n_symb=n_bits//2
+    
+    symbols=np.zeros(n_symb, dtype=complex)
+    
+    for i in range(n_symb):
+        b0=bk[2*i]
+        b1=bk[2*i+1]
+        
+        I= 2*b0-1
+        Q= 2*b1-1
+        
+        #normalisation /sqrt(2) pour Es=1
+        symbols[i] = (I+1j*Q)/np.sqrt(2)
+        
+    return symbols
 
 def qpsk_demap(r_sym):
-    out = np.zeros(2*len(r_sym), dtype=int)
-    out[0::2] = (r_sym.real > 0); out[1::2] = (r_sym.imag > 0)
-    return out
+    n_symb = len(r_sym)
+    bk_r = np.zeros(2*n_symb, dtype=int)
+    
+    for i in range(n_symb):
+        #décision axe I
+        if r_sym[i].real > 0: bk_r[2*i] = 1
+        else: bk_r[2*i] = 0
+            
+        #Axe Q
+        if r_sym[i].imag > 0: bk_r[2*i+1] = 1
+        else: bk_r[2*i+1] = 0
+            
+    return bk_r
 
 def ask_map(bk):
      return bk
 
 def ask_demap(r_sym):
-    bk_r = (r_sym > 0.5).transpose()
+    bk_r = (r_sym > 0.5)
     return bk_r
     
 
@@ -295,12 +313,20 @@ def _plot_chain(s_bb, s, r, r_sym, fc, fs, L, SNRbdB):
     _plot_spectrum(s, fs, fmax=2.5 * fc, title="Spectre du signal passband")
 
 
-#%%
+#%% Simu BPSK
 
 bk = np.random.randint(2, size=100_000)
 
 BER, bk_r = simu_canal_lin(bk,bpsk_map,bpsk_demap, SNRbdB=4, Lc=16, Nc=1, fc=100, plots=True)
 print(f"BER : {BER:.4e}")
+
+#%% Simu ASK
+
+bk = np.random.randint(2, size=100_000)
+
+BER, bk_r = simu_canal_lin(bk,ask_map,ask_demap, SNRbdB=4, Lc=16, Nc=1, fc=100, plots=True)
+print(f"BER : {BER:.4e}")
+
 
 #%%Simu 16QAM
 
@@ -337,7 +363,8 @@ for _SNRbdB in l_SNRbdB:
     BER_16qam.append(m_16QAM)
     BER_bfsk.append(m_BFSK)
     print(_SNRbdB)
-    
+
+"""
 plt.plot(l_SNRbdB,BER_bpsk, "o")
 plt.plot(l_SNRbdB,BER_qpsk,"o")
 plt.plot(l_SNRbdB,BER_ask,"o")
@@ -345,18 +372,12 @@ plt.plot(l_SNRbdB,BER_16qam,"o")
 plt.plot(l_SNRbdB,BER_bfsk,"o")
 plt.yscale('log')
 plt.show()
+"""
 #%%BER theorique
 from scipy.special import erfc
 
 def Q(x):
     return 0.5*erfc(np.sqrt(0.5)*x)
-
-plt.plot(l_SNRbdB,BER_bpsk, "+b")
-plt.plot(l_SNRbdB,BER_qpsk,"xg")
-plt.plot(l_SNRbdB,BER_ask,"+r")
-plt.plot(l_SNRbdB,BER_16qam,"xm")
-plt.plot(l_SNRbdB,BER_bfsk,"+c")
-plt.yscale('log')
 
 def dB_to_dec(SNRbdB):    
     return 10 ** (SNRbdB / 10)
@@ -368,14 +389,22 @@ BER_16qam_th = [0.75*Q(np.sqrt(0.8*dB_to_dec(_SNRbdB))) for _SNRbdB in l_SNRbdB]
 BER_bfsk_th = BER_ask_th
 
 
+#Tracés BER simu
+plt.plot(l_SNRbdB,BER_bpsk, "+b")
+plt.plot(l_SNRbdB,BER_qpsk,"xg")
+plt.plot(l_SNRbdB,BER_ask,"+r")
+plt.plot(l_SNRbdB,BER_16qam,"xm")
+plt.plot(l_SNRbdB,BER_bfsk,"+c")
+
+#Tracés BER théoriques
 plt.plot(l_SNRbdB,BER_bpsk_th, "-.b")
 plt.plot(l_SNRbdB,BER_qpsk_th, "--g")
 plt.plot(l_SNRbdB,BER_ask_th, "--r")
 plt.plot(l_SNRbdB,BER_16qam_th, "--m")
 plt.plot(l_SNRbdB,BER_bfsk_th, "-.c")
 
+plt.yscale('log')
 plt.ylim(1e-6, 1)
-
 plt.show()
 
 

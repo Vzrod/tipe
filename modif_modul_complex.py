@@ -12,12 +12,11 @@ from scipy.fft import fft, fftfreq
 
 #%% Fonctions de bases
 
-d_symb_par_bit={"_16qam_map":4, "bpsk_map":1, "qpsk_map":2,"ask_map":1}
+d_bit_par_symb={"_16qam_map":4, "bpsk_map":1, "qpsk_map":2,"ask_map":1}
 
 def nrz_encoder(sym, L):
     """etale chaque symbole sur L echantillons"""
     return np.repeat(sym, L)
-
 
 def to_passband(s_bb, fc, fs):
     """signal en baseband complexe -> signal réel passband
@@ -25,33 +24,30 @@ def to_passband(s_bb, fc, fs):
     t = np.arange(len(s_bb)) / fs
     return np.real(s_bb * np.exp(1j * 2 * np.pi * fc * t))
 
-
 def to_baseband(r, fc, fs):
     """signal réel en pb -> signal complexe en bb"""
     t = np.arange(len(r)) / fs
     return 2.0 * r * np.exp(-1j * 2 * np.pi * fc * t)
-
 
 def demod_filter(r_bb, L):
     """filtre rectangulaire (intégrateur sur L échantillons)
     et échantillonnage 1 fois par symbole."""
     h = np.ones(L) / L
     y = np.convolve(r_bb, h, mode='full')
-    return y[L - 1::L][:len(r_bb) // L] #A détailler
+    return y[L - 1::L][:len(r_bb) // L] #récupere les res des convolutions=intégrations et enleve le reste de la convolution inutile
+    #le 2e slicing garde l'intégration des N=len(r_bb) // L symboles du message
 
-
-def awgn(s, SNRbdB, symb_par_bit):
+def awgn(s, SNRbdB, bit_par_symb,L):
     """Ajoute un bruit AWGN selon Eb/N0 = SNRbdB dB.
 
     Détecte automatiquement la nature (réelle ou complexe) du signal :
       - réel    : bruit gaussien réel de variance N0/2
       - complexe: bruit gaussien réel de variance N0/2 par composante I et Q
-
-    Calcul : Eb = Ps · symb_par_bit
     """
     SNRb = 10 ** (SNRbdB / 10)
     Ps = np.mean(np.abs(s) ** 2)
-    Eb = Ps * symb_par_bit
+    Es = Ps*L #energie par symbole
+    Eb = Es / bit_par_symb
     N0 = Eb / SNRb
     sigma = np.sqrt(N0 / 2)
     if np.iscomplexobj(s): #Expliquer pk on stack pas 2 fois le bruit...
@@ -88,35 +84,75 @@ def ask_demap(r_sym):
     
 
 #%%16 QAM
-_G = np.array([-3, -1, 1, 3])  # index (b_msb<<1)|b_lsb → niveau
+#code de Gray :associe 2 bits à une amplitude et inv
+GRAY_MAP = {
+    (0, 0): -3,
+    (0, 1): -1,
+    (1, 1):  1,
+    (1, 0):  3 }
 
-_INV = {-3: (0,0), -1: (0,1), 1: (1,1), 3: (1,0)}  # niveau → (b_msb, b_lsb)
+GRAY_INV = {
+    -3: (0, 0),
+    -1: (0, 1),
+     1: (1, 1),
+     3: (1, 0) }
 
 def _16qam_map(ak):
-    n = len(ak) - len(ak) % 4
-    b = ak[:n].reshape(-1, 4)
-    I = _G[(b[:,0] << 1) | b[:,1]]
-    Q = _G[(b[:,2] << 1) | b[:,3]]
-    return (I + 1j * Q) / np.sqrt(10) #normalisation car Es = 10
-
-def _decide16(x):
+    """ 
+    Principe : 1 symbole = 4 bits consécutifs -> on les places dans le plan complexe
+    ce qui nous donne une amplitude et une phase par symbole
+    Rq : on traite les bits 4 par 4
+    """
+    n_bits = len(ak) - (len(ak) % 4) # on coupe le msg pour avoir un mult de 4
+    n_symb = n_bits // 4
     
-    t=2/np.sqrt(10) # Normalisation
-    return np.where(x < t, -3,
-           np.where(x <  0, -1,
-           np.where(x <  t,  1, 3)))
+    symbols = np.zeros(n_symb, dtype=complex)
+    
+    for i in range(n_symb):
+        b0 = ak[4 * i]
+        b1 = ak[4 * i + 1]
+        b2 = ak[4 * i + 2]
+        b3 = ak[4 * i + 3]
+        
+        I = GRAY_MAP[(b0, b1)]
+        Q = GRAY_MAP[(b2, b3)]
+        
+        # la division permet normalisation tq Es=1
+        symbols[i] = (I + 1j * Q) / np.sqrt(10)
+        
+    return symbols
 
 def _16qam_demap(y):
-    I = _decide16(np.real(y))
-    Q = _decide16(np.imag(y))
-    ak = np.empty(4 * len(y), dtype=int)
-    for k in range(len(y)):
-        ak[4*k:4*k+2] = _INV[I[k]]
-        ak[4*k+2:4*k+4] = _INV[Q[k]]
+    n_symb = len(y)
+    ak = np.zeros(4 * n_symb, dtype=int)
+    
+    for i in range(n_symb):
+        #denormalisation
+        I_r = np.real(y[i]) * np.sqrt(10)
+        Q_r = np.imag(y[i]) * np.sqrt(10)
+        
+        #decision sur axe I (seuils à -2,0,2 pour avoir une amplitude de 1 centré en chaque point)
+        if I_r < -2: I_decide = -3
+        elif I_r < 0: I_decide = -1
+        elif I_r < 2: I_decide = 1
+        else: I_decide = 3
+            
+        #decision axe Q
+        if Q_r < -2: Q_decide = -3
+        elif Q_r < 0: Q_decide = -1
+        elif Q_r < 2: Q_decide = 1
+        else: Q_decide = 3
+            
+        # on récup les pairs de bits correspondantes
+        b0, b1 = GRAY_INV[I_decide]
+        b2, b3 = GRAY_INV[Q_decide]
+        
+        ak[4*i]=b0
+        ak[4*i+1]=b1
+        ak[4*i+2]=b2
+        ak[4*i+3]=b3
+        
     return ak
-
-
-
 
 #%% Simu canal modulations linéaires
 
@@ -143,7 +179,7 @@ def simu_canal_lin(bk,b2s,s2b,SNRbdB,Lc, Nc, fc, plots=True):
     s = to_passband(s_bb, fc, fs)  #signal réel mod dans le canal
 
     # ---------- CANAL ----------
-    r = awgn(s, SNRbdB, symb_par_bit=d_symb_par_bit.get(b2s.__name__)*L)
+    r = awgn(s, SNRbdB, bit_par_symb=d_bit_par_symb.get(b2s.__name__),L=L)
     # ---------------------------
     
     r_bb_raw = to_baseband(r, fc, fs)   #signal complexe en bb
@@ -177,7 +213,7 @@ def simu_canal_bfsk(bk, SNRbdB, Lc, Nc, fc, plots=True):
     f_inst = np.repeat(f_inst,L)
     s = np.cos(2 * np.pi * f_inst * t)
 
-    r = awgn(s, SNRbdB, symb_par_bit=L)
+    r = awgn(s, SNRbdB, bit_par_symb=1,L=L)
 
     # ---------- DÉMODULATION (corrélation cohérente sur chaque porteuse) ----------
     y0 = demod_filter(r * np.cos(2 * np.pi * f0 * t), L)
@@ -274,34 +310,38 @@ print(f"BER : {BER:.4e}")
 
 #%%Graphique comparaison BER
 l_SNRbdB = range(-4,16,1)
-BER_bpsk,BER_qpsk,BER_ask,BER_bfsk = [],[],[],[]
+BER_bpsk,BER_qpsk,BER_ask,BER_bfsk,BER_16qam = [],[],[],[],[]
 
 fc=100
 
 for _SNRbdB in l_SNRbdB:
-    m_BPSK,m_QPSK,m_ASK,m_BFSK=0,0,0,0
+    m_BPSK,m_QPSK,m_ASK,m_BFSK,m_16QAM=0,0,0,0,0
     for i in range(1):
         ak=np.random.randint(2,size=int(100_000))
         m_BPSK+=float(simu_canal_lin(ak,bpsk_map,bpsk_demap,SNRbdB=_SNRbdB,Lc=16,Nc=1,fc=100,plots=False)[0])
         m_QPSK+=float(simu_canal_lin(ak,qpsk_map,qpsk_demap,SNRbdB=_SNRbdB,Lc=16,Nc=1,fc=100,plots=False)[0])
         m_ASK+=float(simu_canal_lin(ak,ask_map,ask_demap,SNRbdB=_SNRbdB,Lc=16,Nc=1,fc=100,plots=False)[0])
-        m_BFSK+=float(simu_canal_bfsk(bk, SNRbdB=_SNRbdB, Lc=16, Nc=1, fc=100, plots=False)[0])
-
+        m_16QAM+=float(simu_canal_lin(ak,_16qam_map,_16qam_demap,SNRbdB=_SNRbdB,Lc=16,Nc=1,fc=100,plots=False)[0])
+        m_BFSK+=float(simu_canal_bfsk(ak, SNRbdB=_SNRbdB, Lc=16, Nc=1, fc=100, plots=False)[0])
+        
         print(i)
     m_BPSK/=1
     m_QPSK/=1
     m_ASK/=1
+    m_16QAM/=1
     m_BFSK/=1
     
     BER_bpsk.append(m_BPSK)
     BER_qpsk.append(m_QPSK)
     BER_ask.append(m_ASK)
+    BER_16qam.append(m_16QAM)
     BER_bfsk.append(m_BFSK)
     print(_SNRbdB)
     
 plt.plot(l_SNRbdB,BER_bpsk, "o")
 plt.plot(l_SNRbdB,BER_qpsk,"o")
 plt.plot(l_SNRbdB,BER_ask,"o")
+plt.plot(l_SNRbdB,BER_16qam,"o")
 plt.plot(l_SNRbdB,BER_bfsk,"o")
 plt.yscale('log')
 plt.show()
@@ -312,9 +352,10 @@ def Q(x):
     return 0.5*erfc(np.sqrt(0.5)*x)
 
 plt.plot(l_SNRbdB,BER_bpsk, "+b")
-plt.plot(l_SNRbdB,BER_qpsk,"xg") #Prblm concordance théorie
+plt.plot(l_SNRbdB,BER_qpsk,"xg")
 plt.plot(l_SNRbdB,BER_ask,"+r")
-plt.plot(l_SNRbdB,BER_bfsk,"xc")
+plt.plot(l_SNRbdB,BER_16qam,"xm")
+plt.plot(l_SNRbdB,BER_bfsk,"+c")
 plt.yscale('log')
 
 def dB_to_dec(SNRbdB):    
@@ -323,11 +364,14 @@ def dB_to_dec(SNRbdB):
 BER_bpsk_th = [Q(np.sqrt(2*dB_to_dec(_SNRbdB))) for _SNRbdB in l_SNRbdB]
 BER_qpsk_th = BER_bpsk_th
 BER_ask_th = [Q(np.sqrt(dB_to_dec(_SNRbdB))) for _SNRbdB in l_SNRbdB]
+BER_16qam_th = [0.75*Q(np.sqrt(0.8*dB_to_dec(_SNRbdB))) for _SNRbdB in l_SNRbdB]
 BER_bfsk_th = BER_ask_th
+
 
 plt.plot(l_SNRbdB,BER_bpsk_th, "-.b")
 plt.plot(l_SNRbdB,BER_qpsk_th, "--g")
 plt.plot(l_SNRbdB,BER_ask_th, "--r")
+plt.plot(l_SNRbdB,BER_16qam_th, "--m")
 plt.plot(l_SNRbdB,BER_bfsk_th, "-.c")
 
 plt.ylim(1e-6, 1)

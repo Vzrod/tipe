@@ -58,7 +58,7 @@ def nakagami_channel(s, distance):
     """
     Canal de Nakagami a partir des données du doc Narrowband Channel Measurements and Statistical Characterization
     """
-    m1, m2 = 0.0053, 1.8679
+    m1, m2 = 0.0011, 2.3277
     m = m1 * distance + m2
     
     if distance<0: raise Exception("distance négative")
@@ -239,9 +239,9 @@ def simu_canal_lin(bk,b2s,s2b,SNRbdB,Lc, Nc, fc, faded=False, distance=0, plots=
     return BER, bk_r
 
 
-#%% Simu BFSK
+#%%Mod BFSK
 
-def simu_canal_bfsk(bk, SNRbdB, Lc, Nc, fc, plots=True):
+def simu_canal_bfsk(bk, SNRbdB, Lc, Nc, fc,faded=False,distance=0, plots=True):
 
     L=Lc*Nc
     fs=Lc*fc
@@ -253,6 +253,8 @@ def simu_canal_bfsk(bk, SNRbdB, Lc, Nc, fc, plots=True):
     f_inst = np.repeat(f_inst,L)
     s = np.cos(2 * np.pi * f_inst * t)
 
+    if faded : 
+        s = nakagami_channel(s, distance=distance)
     r = awgn(s, SNRbdB, bit_par_symb=1,L=L)
 
     y0 = demod_filter(r * np.cos(2 * np.pi * f0 * t), L)
@@ -289,12 +291,6 @@ def _plot_chain_bfsk(s, r, y0, y1, fc, df, fs, L, SNRbdB):
     plt.close()
 
     _plot_spectrum(s, fs, fmax=2.5 * fc + df, title="Spectre du signal BFSK passband")
-
-bk = np.random.randint(2, size=100_000)
-BER, bk_r = simu_canal_bfsk(bk, SNRbdB=10, Lc=16, Nc=1, fc=100, plots=True)
-print(f"BER BFSK : {BER:.4e}")
-
-
 
 #%% Graphiques
 
@@ -363,25 +359,31 @@ def _plot_awgn_hist(bruit, sigma, SNR_dB, L):
 #%% Simu BPSK
 
 bk = np.random.randint(2, size=100_000)
-
 BER, bk_r = simu_canal_lin(bk,bpsk_map,bpsk_demap, SNRbdB=4, Lc=16, Nc=1, fc=100, plots=True)
 print(f"BER : {BER:.4e}")
+#%% Simu QPSK
 
+bk = np.random.randint(2, size=100_000)
+BER, bk_r = simu_canal_lin(bk,qpsk_map,qpsk_demap, SNRbdB=4, Lc=16, Nc=1, fc=100, plots=True)
+print(f"BER : {BER:.4e}")
 #%% Simu ASK
 
 bk = np.random.randint(2, size=100_000)
-
 BER, bk_r = simu_canal_lin(bk,ask_map,ask_demap, SNRbdB=4, Lc=16, Nc=1, fc=100, plots=True)
 print(f"BER : {BER:.4e}")
-
-
 #%%Simu 16QAM
 
 bk = np.random.randint(2, size=100_000)
 BER, _  = simu_canal_lin(bk, _16qam_map, _16qam_demap, SNRbdB=10, Lc=16,Nc=1,fc=100, plots=True)
 print(f"BER : {BER:.4e}")
+#%%Simu BFSK
 
-#%%Simu comparaison BER
+bk = np.random.randint(2, size=100_000)
+BER, bk_r = simu_canal_bfsk(bk, SNRbdB=10, Lc=16, Nc=1, fc=100, plots=True)
+print(f"BER BFSK : {BER:.4e}")
+
+#%%Simu comparaison BER AWGN ONLY
+
 l_SNRbdB = range(-4,16,1)
 BER_bpsk,BER_qpsk,BER_ask,BER_bfsk,BER_16qam = [],[],[],[],[]
 
@@ -462,12 +464,59 @@ plt.xticks(range(-4,17,2))
 plt.ylim(1e-6, 1)
 plt.show(); plt.close()
 
+#%%Simu BER AWGN + NAKAGAMI
+
+l_SNRbdB = range(-4,16,1)
+BER_bpsk_f,BER_qpsk_f,BER_ask_f,BER_bfsk_f,BER_16qam_f = [],[],[],[],[]
+
+fc=100
+
+for _SNRbdB in l_SNRbdB:
+    m_BPSK,m_QPSK,m_ASK,m_BFSK,m_16QAM=0,0,0,0,0
+    for i in range(1):
+        ak=np.random.randint(2,size=int(100_000))
+        m_BPSK+=float(simu_canal_lin(ak,bpsk_map,bpsk_demap,SNRbdB=_SNRbdB,Lc=16,Nc=1,fc=100,faded=True,distance=100,plots=False)[0])
+        m_QPSK+=float(simu_canal_lin(ak,qpsk_map,qpsk_demap,SNRbdB=_SNRbdB,Lc=16,Nc=1,fc=100,faded=True,distance=10,plots=False)[0])
+        m_ASK+=float(simu_canal_lin(ak,ask_map,ask_demap,SNRbdB=_SNRbdB,Lc=16,Nc=1,fc=100,faded=True,distance=10,plots=False)[0])
+        m_16QAM+=float(simu_canal_lin(ak,_16qam_map,_16qam_demap,SNRbdB=_SNRbdB,Lc=16,Nc=1,fc=100,faded=True,distance=10,plots=False)[0])
+        m_BFSK+=float(simu_canal_bfsk(ak, SNRbdB=_SNRbdB, Lc=16, Nc=1, fc=100,faded=True,distance=10, plots=False)[0])
+        
+        print(i)
+    m_BPSK/=1
+    m_QPSK/=1
+    m_ASK/=1
+    m_16QAM/=1
+    m_BFSK/=1
+    
+    BER_bpsk_f.append(m_BPSK)
+    BER_qpsk_f.append(m_QPSK)
+    BER_ask_f.append(m_ASK)
+    BER_16qam_f.append(m_16QAM)
+    BER_bfsk_f.append(m_BFSK)
+    print(_SNRbdB)
+
+#%%Graph BER AWGN + NAKAGAMI
+#Tracés BER simu
+plt.plot(l_SNRbdB,BER_bpsk, "+b")
+#plt.plot(l_SNRbdB,BER_qpsk,"xg")
+#plt.plot(l_SNRbdB,BER_ask,"+r")
+plt.plot(l_SNRbdB,BER_16qam,"+m")
+plt.plot(l_SNRbdB,BER_bfsk,"+c")
+
+plt.plot(l_SNRbdB,BER_bpsk_f, "xb")
+#plt.plot(l_SNRbdB,BER_qpsk_f,"xg")
+#plt.plot(l_SNRbdB,BER_ask_f,"+r")
+plt.plot(l_SNRbdB,BER_16qam_f,"xm")
+plt.plot(l_SNRbdB,BER_bfsk_f,"xc")
 
 
-
-
-
-
+plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
+plt.title(r"$BER$ en fonction du $SNR_{b,dB}$")
+plt.legend()
+plt.yscale('log')
+plt.xticks(range(-4,17,2))
+plt.ylim(1e-6, 1)
+plt.show(); plt.close()
 
 
 

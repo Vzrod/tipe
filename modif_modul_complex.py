@@ -8,10 +8,12 @@ Created on Mon Feb  9 13:32:28 2026
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.fft import fft, fftfreq
+from scipy.stats import norm
 
 #%% Fonctions de bases
 
 d_bit_par_symb={"bpsk_map":1,"qpsk_map":2,"ask_map":1,"_16qam_map":4}
+d_nom_mod={"bpsk_map":"BPSK","qpsk_map":"QPSK","ask_map":"ASK","_16qam_map":"16-QAM"}
 
 def nrz_encoder(sym, L):
     """etale chaque symbole sur L echantillons"""
@@ -45,7 +47,29 @@ def awgn(s, SNRbdB, bit_par_symb,L):
     Eb = Es / bit_par_symb
     N0 = Eb / SNRb
     sigma = np.sqrt(N0 / 2)
-    return s + sigma * np.random.randn(len(s))
+    
+    b = sigma * np.random.randn(len(s))
+    
+    #_plot_awgn_hist(b,sigma,SNRbdB,L)
+    
+    return s + b
+
+def nakagami_channel(s, distance):
+    """
+    Canal de Nakagami a partir des données du doc Narrowband Channel Measurements and Statistical Characterization
+    """
+    m1, m2 = 0.0053, 1.8679
+    m = m1 * distance + m2
+    
+    if distance<0: raise Exception("distance négative")
+    
+    p_fading = np.random.gamma(shape=m, scale=1.0/m, size=len(s)) #puissance fading
+    
+    # L'enveloppe d'amplitude h est la racine carrée de la puissance
+    h = np.sqrt(p_fading)
+
+    return s * h
+    
 
 
 #%% Mapping
@@ -101,7 +125,7 @@ def ask_demap(r_sym):
     return bk_r
     
 
-#%%16 QAM
+#%% Mapping 16 QAM
 #code de Gray :associe 2 bits à une amplitude et inv
 GRAY_MAP = {
     (0, 0): -3,
@@ -174,40 +198,43 @@ def _16qam_demap(y):
 
 #%% Simu canal modulations linéaires
 
-def simu_canal_lin(bk,b2s,s2b,SNRbdB,Lc, Nc, fc, plots=True):
+def simu_canal_lin(bk,b2s,s2b,SNRbdB,Lc, Nc, fc, faded=False, distance=0, plots=True):
     """
     Paramètres
     ----------
-    bk   : ndarray de 0/1
+    bk   : array de 0/1
     SNRbdB : Eb/N0 en dB
     Lc     : échantillons par période porteuse
-    Nc     : périodes porteuse par bit         (durée du bit, Rb = fc/Nc)
+    Nc     : périodes porteuse par bit (durée 1 bit, Rb = fc/Nc)
     fc     : fréquence porteuse (Hz)
 
     Retour
     ------
     (BER, bk_r)   bk_r : bits reçus
     """
-    L=Lc*Nc           # échantillons par bit
-    fs=Lc*fc          # fréquence d'échantillonnage
+    L=Lc*Nc #échantillons par bit
+    fs=Lc*fc #fréquence d'échantillonnage
 
     ak = b2s(bk) #Mapping
     #print('mapping ok')
-    s_bb = nrz_encoder(ak, L)     #signal complexe en bb sur-échantillonée
+    s_bb = nrz_encoder(ak, L)  #signal complexe en bb sur-échantillonée
     s = to_passband(s_bb, fc, fs)  #signal réel mod dans le canal
 
     # ---------- CANAL ----------
+    if faded : 
+        s = nakagami_channel(s, distance=distance)
+    
     r = awgn(s, SNRbdB, bit_par_symb=d_bit_par_symb.get(b2s.__name__),L=L)
     # ---------------------------
     
-    r_bb_raw = to_baseband(r, fc, fs)   #signal complexe en bb
+    r_bb_raw = to_baseband(r, fc, fs) #signal complexe en bb
     r_sym = demod_filter(r_bb_raw, L) #filtre intégrateur
     bk_r = s2b(r_sym)
 
     BER = np.mean(bk != bk_r)
 
     if plots:
-        _plot_chain(s_bb, s, r, r_sym, fc, fs, L, SNRbdB)
+        _plot_chain(s_bb, s, r, r_sym, fc, fs, L, SNRbdB, b2s)
 
     return BER, bk_r
 
@@ -215,12 +242,7 @@ def simu_canal_lin(bk,b2s,s2b,SNRbdB,Lc, Nc, fc, plots=True):
 #%% Simu BFSK
 
 def simu_canal_bfsk(bk, SNRbdB, Lc, Nc, fc, plots=True):
-    """
-    BFSK orthogonal cohérent :
-        bit 0 → cos(2π f0 t) ,  bit 1 → cos(2π f1 t)
-        f0 = fc ,  f1 = fc + Δf  avec  Δf = 1/Tb = fc/Nc
-    (Δf · Tb = 1 garantit l'orthogonalité sur la durée d'un bit.)
-    """
+
     L=Lc*Nc
     fs=Lc*fc
     df=fc/Nc
@@ -233,7 +255,6 @@ def simu_canal_bfsk(bk, SNRbdB, Lc, Nc, fc, plots=True):
 
     r = awgn(s, SNRbdB, bit_par_symb=1,L=L)
 
-    # ---------- DÉMODULATION (corrélation cohérente sur chaque porteuse) ----------
     y0 = demod_filter(r * np.cos(2 * np.pi * f0 * t), L)
     y1 = demod_filter(r * np.cos(2 * np.pi * f1 * t), L)
     bk_r = (y1 > y0).astype(int)
@@ -252,17 +273,20 @@ def _plot_chain_bfsk(s, r, y0, y1, fc, df, fs, L, SNRbdB):
     _plot_signal(t, s[:n], r"Signal passband émis $s(t)$ (BFSK)", "s(t)")
     _plot_signal(t, r[:n], f"Signal reçu $r(t)$, $E_b/N_0$ = {SNRbdB} dB", "r(t)")
 
-    # « Constellation » BFSK dans la base orthonormée (ψ0, ψ1)
+    #graph constellation bfsk
     plt.figure(figsize=(5, 5))
     plt.scatter(y0, y1, s=8, alpha=0.4)
     lim = max(np.max(np.abs(y0)), np.max(np.abs(y1))) * 1.1
-    plt.plot([-lim, lim], [-lim, lim], 'r--', lw=0.8, label=r'frontière $y_0 = y_1$')
+    plt.plot([-lim, lim], [-lim, lim], 'r--', label=r'frontière $y_0 = y_1$')
     plt.axhline(0, color='k', lw=0.5); plt.axvline(0, color='k', lw=0.5)
     plt.xlabel(r"$y_0 = \langle r,\,\cos(2\pi f_0 t)\rangle$")
     plt.ylabel(r"$y_1 = \langle r,\,\cos(2\pi f_1 t)\rangle$")
-    plt.title(f"Constellation BFSK orthogonale, $E_b/N_0$ = {SNRbdB} dB")
-    plt.grid(True); plt.axis('equal'); plt.legend()
-    plt.tight_layout(); plt.show(); plt.close()
+    plt.title(f"Constellation BFSK orthogonale, "+ r"$SNR_{b,dB}$" + f" = {SNRbdB} dB")
+    plt.grid(True)
+    plt.axis('equal')
+    plt.legend()
+    plt.show()
+    plt.close()
 
     _plot_spectrum(s, fs, fmax=2.5 * fc + df, title="Spectre du signal BFSK passband")
 
@@ -278,7 +302,8 @@ def _plot_signal(t, s, title, ylabel=""):
     plt.figure(figsize=(8, 3))
     plt.plot(t, s)
     plt.xlabel("Temps (s)"); plt.ylabel(ylabel); plt.title(title)
-    plt.grid(True); plt.tight_layout(); plt.show(); plt.close()
+    plt.grid(True)
+    plt.show(); plt.close()
 
 
 def _plot_constellation(sym, title="Constellation"):
@@ -286,8 +311,9 @@ def _plot_constellation(sym, title="Constellation"):
     plt.scatter(sym.real, sym.imag, s=8, alpha=0.4)
     plt.axhline(0, color='k', lw=0.5); plt.axvline(0, color='k', lw=0.5)
     plt.xlabel("I (in-phase)"); plt.ylabel("Q (quadrature)")
-    plt.title(title); plt.grid(True); plt.axis('equal')
-    plt.tight_layout(); plt.show(); plt.close()
+    plt.title(title)
+    plt.grid(True); plt.axis('equal')
+    plt.show(); plt.close()
 
 
 def _plot_spectrum(s, fs, fmax=None, title="Spectre"):
@@ -300,17 +326,38 @@ def _plot_spectrum(s, fs, fmax=None, title="Spectre"):
     plt.figure(figsize=(8, 3))
     plt.plot(f, dB); plt.ylim(-80, 10)
     plt.xlabel("Fréquence (Hz)"); plt.ylabel("Amplitude (dB)")
-    plt.title(title); plt.grid(True); plt.tight_layout(); plt.show(); plt.close()
+    plt.title(title); plt.grid(True)
+    plt.show(); plt.close()
 
 
-def _plot_chain(s_bb, s, r, r_sym, fc, fs, L, SNRbdB):
+def _plot_chain(s_bb, s, r, r_sym, fc, fs, L, SNRbdB,b2s):
     n = min(10 * L, len(s))
     t = np.arange(n) / fs
-    _plot_signal(t, s_bb.real[:n], r"Enveloppe complexe — composante I(t)", "I")
-    _plot_signal(t, s[:n],         r"Signal passband émis $s(t)$ (réel)", "s(t)")
-    _plot_signal(t, r[:n],         f"Signal reçu $r(t)$, $E_b/N_0$ = {SNRbdB} dB", "r(t)")
-    _plot_constellation(r_sym, f"Constellation BPSK, $E_b/N_0$ = {SNRbdB} dB")
+    _plot_signal(t, s_bb.real[:n], r"Enveloppe complexe — composante I(t)","I")
+    _plot_signal(t, s_bb.imag[:n], r"Enveloppe complexe — composante Q(t)","Q")
+    _plot_signal(t, s[:n], r"Signal passband émis $s(t)$ (réel)","s(t)")
+    _plot_signal(t, r[:n], f"Signal reçu $r(t)$, $E_b/N_0$ = {SNRbdB} dB","r(t)")
+    _plot_constellation(r_sym, f"Constellation {d_nom_mod[b2s.__name__]}, $E_b/N_0$ = {SNRbdB} dB")
     _plot_spectrum(s, fs, fmax=2.5 * fc, title="Spectre du signal passband")
+
+
+def _plot_awgn_hist(bruit, sigma, SNR_dB, L):
+    
+    plt.figure(figsize=(10, 6))
+    count, bins, ignored = plt.hist(bruit, bins=100, density=True, alpha=0.6, color='blue', edgecolor='black', label='Bruit généré')
+
+    x = np.linspace(-4*sigma, 4*sigma, 1000)
+    
+    densi_th = norm.pdf(x, loc=0, scale=sigma)
+    
+    plt.plot(x, densi_th, 'r-', linewidth=2.5, label=f'Loi Gaussienne Théorique\n($\mu=0$, $\sigma={sigma:.4f}$)')
+    
+    plt.title(f'Modèle du générateur AWGN (SNR = {SNR_dB} dB, L = {L})', fontsize=12)
+    plt.xlabel('Amplitude du bruit', fontsize=12)
+    plt.ylabel('Densité de probabilité', fontsize=12)
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.legend(loc='upper right', fontsize=12)
+    plt.show();plt.close()
 
 
 #%% Simu BPSK
@@ -331,10 +378,10 @@ print(f"BER : {BER:.4e}")
 #%%Simu 16QAM
 
 bk = np.random.randint(2, size=100_000)
-BER, _  = simu_canal_lin(bk, _16qam_map, _16qam_demap, SNRbdB=15, Lc=16,Nc=1,fc=100, plots=True)
+BER, _  = simu_canal_lin(bk, _16qam_map, _16qam_demap, SNRbdB=10, Lc=16,Nc=1,fc=100, plots=True)
 print(f"BER : {BER:.4e}")
 
-#%%Graphique comparaison BER
+#%%Simu comparaison BER
 l_SNRbdB = range(-4,16,1)
 BER_bpsk,BER_qpsk,BER_ask,BER_bfsk,BER_16qam = [],[],[],[],[]
 
@@ -373,7 +420,7 @@ plt.plot(l_SNRbdB,BER_bfsk,"o")
 plt.yscale('log')
 plt.show()
 """
-#%%BER theorique
+#%%Graphiques BER theoriques
 from scipy.special import erfc
 
 def Q(x):
@@ -389,6 +436,9 @@ BER_16qam_th = [0.75*Q(np.sqrt(0.8*dB_to_dec(_SNRbdB))) for _SNRbdB in l_SNRbdB]
 BER_bfsk_th = BER_ask_th
 
 
+#Ajouter la bsup
+
+
 #Tracés BER simu
 plt.plot(l_SNRbdB,BER_bpsk, "+b")
 plt.plot(l_SNRbdB,BER_qpsk,"xg")
@@ -397,15 +447,20 @@ plt.plot(l_SNRbdB,BER_16qam,"xm")
 plt.plot(l_SNRbdB,BER_bfsk,"+c")
 
 #Tracés BER théoriques
-plt.plot(l_SNRbdB,BER_bpsk_th, "-.b")
-plt.plot(l_SNRbdB,BER_qpsk_th, "--g")
-plt.plot(l_SNRbdB,BER_ask_th, "--r")
-plt.plot(l_SNRbdB,BER_16qam_th, "--m")
-plt.plot(l_SNRbdB,BER_bfsk_th, "-.c")
+plt.plot(l_SNRbdB,BER_bpsk_th, "-.b",label="BPSK",lw=0.7)
+plt.plot(l_SNRbdB,BER_qpsk_th, "--g",label="QPSK",lw=0.7, alpha=0.8)
+plt.plot(l_SNRbdB,BER_ask_th, "--r",label="ASK",lw=0.7)
+plt.plot(l_SNRbdB,BER_16qam_th, "--m",label="16-QAM",lw=0.7, alpha=0.5)
+plt.plot(l_SNRbdB,BER_bfsk_th, "-.c",label="BFSK",lw=0.7)
 
+
+plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
+plt.title(r"$BER$ en fonction du $SNR_{b,dB}$")
+plt.legend()
 plt.yscale('log')
+plt.xticks(range(-4,17,2))
 plt.ylim(1e-6, 1)
-plt.show()
+plt.show(); plt.close()
 
 
 

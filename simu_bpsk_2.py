@@ -96,7 +96,7 @@ def rayleigh_fading(s, L, omega=1.0):
     sigma = np.sqrt(omega / 2)
     X = sigma * np.random.randn(Nb)
     Y = sigma * np.random.randn(Nb)
-    alpha = np.sqrt(X**2 + Y**2)          # Rayleigh, sans complexes
+    alpha = np.sqrt(X**2 + Y**2)
     alpha_exp = np.repeat(alpha, L)[:len(s)]
     return alpha_exp * s
 

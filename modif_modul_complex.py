@@ -9,6 +9,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.fft import fft, fftfreq
 from scipy.stats import norm
+from reedsolo import RSCodec, ReedSolomonError
+
 
 #%% Fonctions de bases
 
@@ -198,7 +200,7 @@ def _16qam_demap(y):
 
 #%% Simu canal modulations linéaires
 
-def simu_canal_lin(bk,b2s,s2b,SNRbdB,Lc, Nc, fc, faded=False, distance=0, plots=True):
+def simu_canal_lin(bk,b2s,s2b,SNRbdB,Lc=16, Nc=1, fc=100, faded=False, distance=0, rs=False,plots=False):
     """
     Paramètres
     ----------
@@ -214,9 +216,13 @@ def simu_canal_lin(bk,b2s,s2b,SNRbdB,Lc, Nc, fc, faded=False, distance=0, plots=
     """
     L=Lc*Nc #échantillons par bit
     fs=Lc*fc #fréquence d'échantillonnage
-
+    
+    bk_original = bk.copy()
+    
+    if rs : 
+        bk,rempli = encod_rs(bk)
+    
     ak = b2s(bk) #Mapping
-    #print('mapping ok')
     s_bb = nrz_encoder(ak, L)  #signal complexe en bb sur-échantillonée
     s = to_passband(s_bb, fc, fs)  #signal réel mod dans le canal
 
@@ -230,23 +236,33 @@ def simu_canal_lin(bk,b2s,s2b,SNRbdB,Lc, Nc, fc, faded=False, distance=0, plots=
     r_bb_raw = to_baseband(r, fc, fs) #signal complexe en bb
     r_sym = demod_filter(r_bb_raw, L) #filtre intégrateur
     bk_r = s2b(r_sym)
+    
+    if rs : 
+        bk_r,error = decod_rs(bk_r,rempli)
 
-    BER = np.mean(bk != bk_r)
+    BER = np.mean(bk_original != bk_r)
 
     if plots:
         _plot_chain(s_bb, s, r, r_sym, fc, fs, L, SNRbdB, b2s)
 
+    if rs : 
+        return BER, bk_r,error
     return BER, bk_r
 
 
 #%%Mod BFSK
 
-def simu_canal_bfsk(bk, SNRbdB, Lc, Nc, fc,faded=False,distance=0, plots=True):
+def simu_canal_bfsk(bk, SNRbdB, Lc=16, Nc=1, fc=100,faded=False,distance=0,rs=False, plots=False):
 
     L=Lc*Nc
     fs=Lc*fc
     df=fc/Nc
     f0,f1=fc, fc+df
+    
+    bk_original = bk.copy()
+    
+    if rs : 
+        bk,rempli = encod_rs(bk)
     
     t = np.arange(len(bk) * L) / fs
     f_inst = [f0 if k==0 else f1 for k in bk]
@@ -260,12 +276,17 @@ def simu_canal_bfsk(bk, SNRbdB, Lc, Nc, fc,faded=False,distance=0, plots=True):
     y0 = demod_filter(r * np.cos(2 * np.pi * f0 * t), L)
     y1 = demod_filter(r * np.cos(2 * np.pi * f1 * t), L)
     bk_r = (y1 > y0).astype(int)
+    
+    if rs : 
+        bk_r,error = decod_rs(bk_r,rempli)
 
-    BER = np.mean(bk != bk_r)
+    BER = np.mean(bk_original != bk_r)
 
     if plots:
         _plot_chain_bfsk(s, r, y0, y1, fc, df, fs, L, SNRbdB)
 
+    if rs : 
+        return BER, bk_r,error
     return BER, bk_r
 
 
@@ -291,6 +312,54 @@ def _plot_chain_bfsk(s, r, y0, y1, fc, df, fs, L, SNRbdB):
     plt.close()
 
     _plot_spectrum(s, fs, fmax=2.5 * fc + df, title="Spectre du signal BFSK passband")
+
+#%% Reed-Solomon
+def bits_to_bytes(bk):
+    remplissage = (8 - len(bk) % 8) % 8
+    bk_complet = list(bk) + [0] * remplissage #on complete avec des 0 pour avoir un multiple de 8
+    octets = bytearray()
+    for i in range(0, len(bk_complet), 8):
+        byte = 0
+        for bit in bk_complet[i:i+8]:
+            byte = (byte << 1) | bit #constuit un octet bit par bit 
+        octets.append(byte)
+    return bytes(octets), remplissage
+
+def bytes_to_bits(bk, remplissage=None):
+    bits = []
+    for byte in bk:
+        for i in range(7, -1, -1):
+            bits.append((byte >> i) & 1) #on reconstruit les bits depuis un octet
+    
+    if remplissage is not None and remplissage > 0:
+        bits = bits[:-remplissage]
+    return np.array(bits)
+
+
+def encod_rs(bk):
+    msg,rempli = bits_to_bytes(bk)
+    msg_encod=RSCodec(32).encode(msg)
+    bits_encod=bytes_to_bits(msg_encod)
+    return bits_encod,rempli
+
+def decod_rs(bk_r, rempli, nsym=32, nsize=255):
+    msg_r, _ = bits_to_bytes(bk_r)
+    rsc = RSCodec(nsym, nsize=nsize)
+    decoded = bytearray()
+    n_fail = 0
+
+    for i in range(0, len(msg_r), nsize):
+        block = bytes(msg_r[i:i+nsize])
+        try:
+            decoded.extend(rsc.decode(block)[0])
+        except ReedSolomonError:
+            n_fail += 1
+            # bloc non corrigible : on garde les octets de données reçus bruts
+            data_len = max(0, len(block) - nsym)
+            decoded.extend(block[:data_len])
+
+    bk_r_decod = bytes_to_bits(bytes(decoded), remplissage=rempli)
+    return bk_r_decod, n_fail
 
 #%% Graphiques
 
@@ -386,7 +455,7 @@ print(f"BER BFSK : {BER:.4e}")
 
 l_SNRbdB = range(-4,16,1)
 BER_bpsk,BER_qpsk,BER_ask,BER_bfsk,BER_16qam = [],[],[],[],[]
-
+#rs_bpsk,rs_qpsk,rs_ask,rs_bfsk,rs_16qam=[],[],[],[],[]
 fc=100
 
 for _SNRbdB in l_SNRbdB:
@@ -398,7 +467,6 @@ for _SNRbdB in l_SNRbdB:
         m_ASK+=float(simu_canal_lin(ak,ask_map,ask_demap,SNRbdB=_SNRbdB,Lc=16,Nc=1,fc=100,plots=False)[0])
         m_16QAM+=float(simu_canal_lin(ak,_16qam_map,_16qam_demap,SNRbdB=_SNRbdB,Lc=16,Nc=1,fc=100,plots=False)[0])
         m_BFSK+=float(simu_canal_bfsk(ak, SNRbdB=_SNRbdB, Lc=16, Nc=1, fc=100, plots=False)[0])
-        
         print(i)
     m_BPSK/=1
     m_QPSK/=1
@@ -518,9 +586,60 @@ plt.xticks(range(-4,17,2))
 plt.ylim(1e-6, 1)
 plt.show(); plt.close()
 
+#%%Simu BER AWGN + RS
+
+l_SNRbdB = range(-4,16,1)
+BER_bpsk_rs,BER_qpsk_rs,BER_ask_rs,BER_bfsk_rs,BER_16qam_rs = [],[],[],[],[]
+
+fc=100
+MOY=10
+
+for _SNRbdB in l_SNRbdB:
+    m_BPSK,m_QPSK,m_ASK,m_BFSK,m_16QAM=0,0,0,0,0
+    for i in range(MOY):
+        ak=np.random.randint(2,size=int(10_000))
+        m_BPSK+=float(simu_canal_lin(ak,bpsk_map,bpsk_demap,SNRbdB=_SNRbdB,rs=True)[0])
+        m_QPSK+=float(simu_canal_lin(ak,qpsk_map,qpsk_demap,SNRbdB=_SNRbdB,rs=True)[0])
+        m_ASK+=float(simu_canal_lin(ak,ask_map,ask_demap,SNRbdB=_SNRbdB,rs=True)[0])
+        m_16QAM+=float(simu_canal_lin(ak,_16qam_map,_16qam_demap,SNRbdB=_SNRbdB,rs=True)[0])
+        m_BFSK+=float(simu_canal_bfsk(ak, SNRbdB=_SNRbdB,rs=True)[0])
+        
+        print(i)
+    m_BPSK/=MOY
+    m_QPSK/=MOY
+    m_ASK/=MOY
+    m_16QAM/=MOY
+    m_BFSK/=MOY
+    
+    BER_bpsk_rs.append(m_BPSK)
+    BER_qpsk_rs.append(m_QPSK)
+    BER_ask_rs.append(m_ASK)
+    BER_16qam_rs.append(m_16QAM)
+    BER_bfsk_rs.append(m_BFSK)
+    print(_SNRbdB)
+
+#%%Graph BER AWGN + RS
+#Tracés BER simu
+plt.plot(l_SNRbdB,BER_bpsk, "+b")
+#plt.plot(l_SNRbdB,BER_qpsk,"xg")
+#plt.plot(l_SNRbdB,BER_ask,"+r")
+plt.plot(l_SNRbdB,BER_16qam,"+m")
+plt.plot(l_SNRbdB,BER_bfsk,"+c")
+
+plt.plot(l_SNRbdB,BER_bpsk_rs, "xb")
+#plt.plot(l_SNRbdB,BER_qpsk_rs,"xg")
+#plt.plot(l_SNRbdB,BER_ask_rs,"+r")
+plt.plot(l_SNRbdB,BER_16qam_rs,"xm")
+plt.plot(l_SNRbdB,BER_bfsk_rs,"xc")
 
 
-
+plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
+plt.title(r"$BER$ en fonction du $SNR_{b,dB}$")
+plt.legend()
+plt.yscale('log')
+plt.xticks(range(-4,17,2))
+plt.ylim(1e-10, 1)
+plt.show(); plt.close()
 
 
 

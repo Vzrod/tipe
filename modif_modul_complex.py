@@ -71,8 +71,6 @@ def nakagami_channel(s, distance):
     h = np.sqrt(p_fading)
 
     return s * h
-    
-
 
 #%% Mapping
 
@@ -158,8 +156,8 @@ def _16qam_map(ak):
         b2 = ak[4 * i + 2]
         b3 = ak[4 * i + 3]
         
-        I = GRAY_MAP[(b0, b1)]
-        Q = GRAY_MAP[(b2, b3)]
+        I = GRAY_MAP[(b0, b1)] #2 premiers bits sur l'axe I
+        Q = GRAY_MAP[(b2, b3)] #les 2 suivants sur l'axe Q
         
         # la division permet normalisation tq Es=1
         symbols[i] = (I + 1j * Q) / np.sqrt(10)
@@ -365,8 +363,11 @@ def decod_rs(bk_r, rempli, nsym=32, nsize=255):
 
 def _plot_signal(t, s, title, ylabel=""):
     plt.figure(figsize=(8, 3))
-    plt.plot(t, s)
+    plt.plot(t, s.real, label='Composante Q')
+    if not(np.allclose(s.imag, 0)):
+        plt.plot(t, s.imag, '--r', label='Composante I')
     plt.xlabel("Temps (s)"); plt.ylabel(ylabel); plt.title(title)
+    plt.legend(loc='upper right')    
     plt.grid(True)
     plt.show(); plt.close()
 
@@ -375,7 +376,7 @@ def _plot_constellation(sym, title="Constellation"):
     plt.figure(figsize=(5, 5))
     plt.scatter(sym.real, sym.imag, s=8, alpha=0.4)
     plt.axhline(0, color='k', lw=0.5); plt.axvline(0, color='k', lw=0.5)
-    plt.xlabel("I (in-phase)"); plt.ylabel("Q (quadrature)")
+    plt.xlabel("I (en-phase)"); plt.ylabel("Q (quadrature)")
     plt.title(title)
     plt.grid(True); plt.axis('equal')
     plt.show(); plt.close()
@@ -398,8 +399,7 @@ def _plot_spectrum(s, fs, fmax=None, title="Spectre"):
 def _plot_chain(s_bb, s, r, r_sym, fc, fs, L, SNRbdB,b2s):
     n = min(10 * L, len(s))
     t = np.arange(n) / fs
-    _plot_signal(t, s_bb.real[:n], r"Enveloppe complexe — composante I(t)","I")
-    _plot_signal(t, s_bb.imag[:n], r"Enveloppe complexe — composante Q(t)","Q")
+    _plot_signal(t, s_bb[:n], r"Enveloppe complexe","Amplitude")
     _plot_signal(t, s[:n], r"Signal passband émis $s(t)$ (réel)","s(t)")
     _plot_signal(t, r[:n], f"Signal reçu $r(t)$, $E_b/N_0$ = {SNRbdB} dB","r(t)")
     _plot_constellation(r_sym, f"Constellation {d_nom_mod[b2s.__name__]}, $E_b/N_0$ = {SNRbdB} dB")
@@ -428,22 +428,22 @@ def _plot_awgn_hist(bruit, sigma, SNR_dB, L):
 #%% Simu BPSK
 
 bk = np.random.randint(2, size=100_000)
-BER, bk_r = simu_canal_lin(bk,bpsk_map,bpsk_demap, SNRbdB=4, Lc=16, Nc=1, fc=100, plots=True)
+BER, bk_r = simu_canal_lin(bk,bpsk_map,bpsk_demap, SNRbdB=4, Lc=32, Nc=1, fc=100, plots=True)
 print(f"BER : {BER:.4e}")
 #%% Simu QPSK
 
 bk = np.random.randint(2, size=100_000)
-BER, bk_r = simu_canal_lin(bk,qpsk_map,qpsk_demap, SNRbdB=4, Lc=16, Nc=1, fc=100, plots=True)
+BER, bk_r = simu_canal_lin(bk,qpsk_map,qpsk_demap, SNRbdB=12, Lc=32, Nc=1, fc=100, plots=True)
 print(f"BER : {BER:.4e}")
 #%% Simu ASK
 
 bk = np.random.randint(2, size=100_000)
-BER, bk_r = simu_canal_lin(bk,ask_map,ask_demap, SNRbdB=4, Lc=16, Nc=1, fc=100, plots=True)
+BER, bk_r = simu_canal_lin(bk,ask_map,ask_demap, SNRbdB=4, Lc=32, Nc=1, fc=100, plots=True)
 print(f"BER : {BER:.4e}")
 #%%Simu 16QAM
 
 bk = np.random.randint(2, size=100_000)
-BER, _  = simu_canal_lin(bk, _16qam_map, _16qam_demap, SNRbdB=10, Lc=16,Nc=1,fc=100, plots=True)
+BER, _  = simu_canal_lin(bk, _16qam_map, _16qam_demap, SNRbdB=10, Lc=32,Nc=1,fc=100, plots=True)
 print(f"BER : {BER:.4e}")
 #%%Simu BFSK
 
@@ -455,24 +455,27 @@ print(f"BER BFSK : {BER:.4e}")
 
 l_SNRbdB = range(-4,16,1)
 BER_bpsk,BER_qpsk,BER_ask,BER_bfsk,BER_16qam = [],[],[],[],[]
-#rs_bpsk,rs_qpsk,rs_ask,rs_bfsk,rs_16qam=[],[],[],[],[]
 fc=100
+MOY=1
+B_SIZE=1_000_000
+
+rng = np.random.default_rng()
 
 for _SNRbdB in l_SNRbdB:
     m_BPSK,m_QPSK,m_ASK,m_BFSK,m_16QAM=0,0,0,0,0
-    for i in range(1):
-        ak=np.random.randint(2,size=int(100_000))
+    for i in range(MOY):
+        ak = rng.integers(0, 2, size=B_SIZE, dtype=np.int8)
         m_BPSK+=float(simu_canal_lin(ak,bpsk_map,bpsk_demap,SNRbdB=_SNRbdB,Lc=16,Nc=1,fc=100,plots=False)[0])
         m_QPSK+=float(simu_canal_lin(ak,qpsk_map,qpsk_demap,SNRbdB=_SNRbdB,Lc=16,Nc=1,fc=100,plots=False)[0])
         m_ASK+=float(simu_canal_lin(ak,ask_map,ask_demap,SNRbdB=_SNRbdB,Lc=16,Nc=1,fc=100,plots=False)[0])
         m_16QAM+=float(simu_canal_lin(ak,_16qam_map,_16qam_demap,SNRbdB=_SNRbdB,Lc=16,Nc=1,fc=100,plots=False)[0])
         m_BFSK+=float(simu_canal_bfsk(ak, SNRbdB=_SNRbdB, Lc=16, Nc=1, fc=100, plots=False)[0])
         print(i)
-    m_BPSK/=1
-    m_QPSK/=1
-    m_ASK/=1
-    m_16QAM/=1
-    m_BFSK/=1
+    m_BPSK/=MOY
+    m_QPSK/=MOY
+    m_ASK/=MOY
+    m_16QAM/=MOY
+    m_BFSK/=MOY
     
     BER_bpsk.append(m_BPSK)
     BER_qpsk.append(m_QPSK)
@@ -579,7 +582,7 @@ plt.plot(l_SNRbdB,BER_bfsk_f,"xc")
 
 
 plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
-plt.title(r"$BER$ en fonction du $SNR_{b,dB}$")
+plt.title(r"$BER$ théoriques et simulés en fonction du $SNR_{b,dB}$")
 plt.legend()
 plt.yscale('log')
 plt.xticks(range(-4,17,2))
@@ -588,16 +591,17 @@ plt.show(); plt.close()
 
 #%%Simu BER AWGN + RS
 
-l_SNRbdB = range(-4,16,1)
+#l_SNRbdB = range(-4,16,1)
+l_SNRbdB_z = np.arange(2,11,0.5)
 BER_bpsk_rs,BER_qpsk_rs,BER_ask_rs,BER_bfsk_rs,BER_16qam_rs = [],[],[],[],[]
 
 fc=100
-MOY=10
+MOY=1
 
-for _SNRbdB in l_SNRbdB:
+for _SNRbdB in l_SNRbdB_z:
     m_BPSK,m_QPSK,m_ASK,m_BFSK,m_16QAM=0,0,0,0,0
     for i in range(MOY):
-        ak=np.random.randint(2,size=int(10_000))
+        ak=np.random.randint(2,size=int(100_000))
         m_BPSK+=float(simu_canal_lin(ak,bpsk_map,bpsk_demap,SNRbdB=_SNRbdB,rs=True)[0])
         m_QPSK+=float(simu_canal_lin(ak,qpsk_map,qpsk_demap,SNRbdB=_SNRbdB,rs=True)[0])
         m_ASK+=float(simu_canal_lin(ak,ask_map,ask_demap,SNRbdB=_SNRbdB,rs=True)[0])
@@ -620,17 +624,17 @@ for _SNRbdB in l_SNRbdB:
 
 #%%Graph BER AWGN + RS
 #Tracés BER simu
-plt.plot(l_SNRbdB,BER_bpsk, "+b")
+plt.plot(l_SNRbdB,BER_bpsk, "--b")
 #plt.plot(l_SNRbdB,BER_qpsk,"xg")
 #plt.plot(l_SNRbdB,BER_ask,"+r")
-plt.plot(l_SNRbdB,BER_16qam,"+m")
-plt.plot(l_SNRbdB,BER_bfsk,"+c")
+plt.plot(l_SNRbdB,BER_16qam,"--m")
+plt.plot(l_SNRbdB,BER_bfsk,"--c")
 
-plt.plot(l_SNRbdB,BER_bpsk_rs, "xb")
-#plt.plot(l_SNRbdB,BER_qpsk_rs,"xg")
-#plt.plot(l_SNRbdB,BER_ask_rs,"+r")
-plt.plot(l_SNRbdB,BER_16qam_rs,"xm")
-plt.plot(l_SNRbdB,BER_bfsk_rs,"xc")
+plt.plot(l_SNRbdB_z,BER_bpsk_rs, "xb")
+#plt.plot(l_SNRbdB_z,BER_qpsk_rs,"xg")
+#plt.plot(l_SNRbdB_z,BER_ask_rs,"+r")
+plt.plot(l_SNRbdB_z,BER_16qam_rs,"xm")
+plt.plot(l_SNRbdB_z,BER_bfsk_rs,"xc")
 
 
 plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
@@ -638,7 +642,7 @@ plt.title(r"$BER$ en fonction du $SNR_{b,dB}$")
 plt.legend()
 plt.yscale('log')
 plt.xticks(range(-4,17,2))
-plt.ylim(1e-10, 1)
+plt.ylim(1e-6, 1)
 plt.show(); plt.close()
 
 

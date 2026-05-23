@@ -579,17 +579,12 @@ color_c = {'BPSK':'-.b',
 
 #Tracés BER simu
 for mod,ber in d_simu['AWGN']['BER']:
-    plt.plot(d_simu['AWGN']['l_SNRbdB'],ber, color[mod],label=mod)
+    plt.plot(d_simu['AWGN']['l_SNRbdB'],ber, color_p[mod],label=mod)
 
 for mod,ber in d_simu['TH']['BER']:
-    plt.plot(d_simu['TH']['l_SNRbdB'],ber, color[mod],label=mod)
+    plt.plot(d_simu['TH']['l_SNRbdB'],ber, color_c[mod],label=mod,lw=0.7,alpha=0.8)
 
-#Tracés BER théoriques
-plt.plot(l_SNRbdB,BER_bpsk_th, "-.b",label="BPSK",lw=0.7)
-plt.plot(l_SNRbdB,BER_qpsk_th, "--g",label="QPSK",lw=0.7, alpha=0.8)
-plt.plot(l_SNRbdB,BER_ask_th, "--r",label="ASK",lw=0.7)
-plt.plot(l_SNRbdB,BER_16qam_th, "--m",label="16-QAM",lw=0.7, alpha=0.5)
-plt.plot(l_SNRbdB,BER_bfsk_th, "-.c",label="BFSK",lw=0.7)
+#A TESTER POUR VOIR SI CA MARCHE
 
 
 plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")

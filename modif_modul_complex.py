@@ -361,13 +361,14 @@ def decod_rs(bk_r, rempli, nsym=32, nsize=255):
 
 #%% Graphiques
 
-def _plot_signal(t, s, title, ylabel=""):
+def _plot_signal(t, s, title, ylabel="", legend=False):
     plt.figure(figsize=(8, 3))
     plt.plot(t, s.real, label='Composante Q')
     if not(np.allclose(s.imag, 0)):
         plt.plot(t, s.imag, '--r', label='Composante I')
     plt.xlabel("Temps (s)"); plt.ylabel(ylabel); plt.title(title)
-    plt.legend(loc='upper right')    
+    if legend :
+        plt.legend(loc='upper right')    
     plt.grid(True)
     plt.show(); plt.close()
 
@@ -399,7 +400,7 @@ def _plot_spectrum(s, fs, fmax=None, title="Spectre"):
 def _plot_chain(s_bb, s, r, r_sym, fc, fs, L, SNRbdB,b2s):
     n = min(10 * L, len(s))
     t = np.arange(n) / fs
-    _plot_signal(t, s_bb[:n], r"Enveloppe complexe","Amplitude")
+    _plot_signal(t, s_bb[:n], r"Enveloppe complexe","Amplitude", legend=True)
     _plot_signal(t, s[:n], r"Signal passband émis $s(t)$ (réel)","s(t)")
     _plot_signal(t, r[:n], f"Signal reçu $r(t)$, $E_b/N_0$ = {SNRbdB} dB","r(t)")
     _plot_constellation(r_sym, f"Constellation {d_nom_mod[b2s.__name__]}, $E_b/N_0$ = {SNRbdB} dB")

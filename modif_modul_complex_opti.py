@@ -322,7 +322,7 @@ def bits_to_bytes(bk):
     for i in range(0, len(bk_complet), 8):
         byte = 0
         for bit in bk_complet[i:i+8]:
-            byte = (byte << 1) | bit #constuit un octet bit par bit 
+            byte = (byte << 1) | int(bit) #constuit un octet bit par bit 
         octets.append(byte)
     return bytes(octets), remplissage
 
@@ -473,7 +473,6 @@ def simu(l_SNRbdB,B_SIZE,fc=100,Lc=16,Nc=1,MOY=1,faded=False,m=1,rs=False):
     
     for _SNRbdB in l_SNRbdB:
         moy={'BPSK':0,'QPSK':0,'ASK':0,'16QAM':0,'BFSK':0}
-        m_BPSK,m_QPSK,m_ASK,m_BFSK,m_16QAM=0,0,0,0,0
         for i in range(MOY):
             bk = rng.integers(0, 2, size=B_SIZE, dtype=np.int8)
             for mod in ['BPSK','QPSK','ASK','16QAM']:
@@ -485,11 +484,11 @@ def simu(l_SNRbdB,B_SIZE,fc=100,Lc=16,Nc=1,MOY=1,faded=False,m=1,rs=False):
         for mod in moy:
             moy[mod]/=MOY
         
-        BER_bpsk.append(m_BPSK)
-        BER_qpsk.append(m_QPSK)
-        BER_ask.append(m_ASK)
-        BER_16qam.append(m_16QAM)
-        BER_bfsk.append(m_BFSK)
+        BER_bpsk.append(moy['BPSK'])
+        BER_qpsk.append(moy['QPSK'])
+        BER_ask.append(moy['ASK'])
+        BER_16qam.append(moy['16QAM'])
+        BER_bfsk.append(moy['BFSK'])
         print(_SNRbdB)
     
     return {'l_SNRbdB':l_SNRbdB,
@@ -539,7 +538,7 @@ def simu_th(l_SNRbdB):
 l_SNRbdB = range(-4,16,1)
 fc=100
 MOY=1
-B_SIZE=1_000_000
+B_SIZE=100_000
 Lc=16
 Nc=1
     
@@ -552,7 +551,9 @@ d_simu['AWGN'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY)
 
 d_simu['NAGA-1'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=1)
 
-d_simu['RS'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,rs=True)
+
+l_SNRbdB_rs = list(range(-4,16,1)) + list(map(lambda x:float(round(x,ndigits=2)),np.arange(4.2,10,0.2)))
+d_simu['RS'] = simu(l_SNRbdB_rs,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,rs=True)
 
 
 
@@ -576,71 +577,70 @@ color_c = {'BPSK':'-.b',
        '16QAM':'--m',
        'BFSK':'-.c'
        }
+#%%Graphe BER AWGN
+for mod,ber in d_simu['AWGN']['BER'].items():
+    plt.plot(d_simu['AWGN']['l_SNRbdB'],ber, color_p[mod])
 
-#Tracés BER simu
-for mod,ber in d_simu['AWGN']['BER']:
-    plt.plot(d_simu['AWGN']['l_SNRbdB'],ber, color_p[mod],label=mod)
-
-for mod,ber in d_simu['TH']['BER']:
+for mod,ber in d_simu['TH']['BER'].items():
     plt.plot(d_simu['TH']['l_SNRbdB'],ber, color_c[mod],label=mod,lw=0.7,alpha=0.8)
-
-#A TESTER POUR VOIR SI CA MARCHE
-
-
-plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
-plt.title(r"$BER$ en fonction du $SNR_{b,dB}$")
-plt.legend() #Ajouter en petit en haut/bas les autres parametres de la simu
-plt.yscale('log')
-plt.xticks(range(-4,17,2))
-plt.ylim(1e-6, 1)
-plt.show(); plt.close()
-
-
-#%%Graph BER AWGN + NAKAGAMI
-#Tracés BER simu
-plt.plot(l_SNRbdB,BER_bpsk, "+b")
-#plt.plot(l_SNRbdB,BER_qpsk,"xg")
-#plt.plot(l_SNRbdB,BER_ask,"+r")
-plt.plot(l_SNRbdB,BER_16qam,"+m")
-plt.plot(l_SNRbdB,BER_bfsk,"+c")
-
-plt.plot(l_SNRbdB,BER_bpsk_f, "xb")
-#plt.plot(l_SNRbdB,BER_qpsk_f,"xg")
-#plt.plot(l_SNRbdB,BER_ask_f,"+r")
-plt.plot(l_SNRbdB,BER_16qam_f,"xm")
-plt.plot(l_SNRbdB,BER_bfsk_f,"xc")
-
 
 plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
 plt.title(r"$BER$ théoriques et simulés en fonction du $SNR_{b,dB}$")
-plt.legend()
+plt.text(0.05, 0.15, r"Canal: $AWGN$"+"\n"+f"Nb bits: {d_simu['AWGN']['B_SIZE']}", 
+         transform=plt.gca().transAxes, 
+         fontsize=10, 
+         verticalalignment='top',
+         bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.2))
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+#Ajouter en petit en haut/bas les autres parametres de la simu
 plt.yscale('log')
 plt.xticks(range(-4,17,2))
 plt.ylim(1e-6, 1)
 plt.show(); plt.close()
 
-#%%Graph BER AWGN + RS
-#Tracés BER simu
-plt.plot(l_SNRbdB,BER_bpsk, "--b")
-#plt.plot(l_SNRbdB,BER_qpsk,"xg")
-#plt.plot(l_SNRbdB,BER_ask,"+r")
-plt.plot(l_SNRbdB,BER_16qam,"--m")
-plt.plot(l_SNRbdB,BER_bfsk,"--c")
+#%%Graphe BER AWGN+Nagakami
+for mod,ber in d_simu['NAGA-1']['BER'].items():
+    plt.plot(d_simu['NAGA-1']['l_SNRbdB'],ber, color_p[mod])
 
-plt.plot(l_SNRbdB_z,BER_bpsk_rs, "xb")
-#plt.plot(l_SNRbdB_z,BER_qpsk_rs,"xg")
-#plt.plot(l_SNRbdB_z,BER_ask_rs,"+r")
-plt.plot(l_SNRbdB_z,BER_16qam_rs,"xm")
-plt.plot(l_SNRbdB_z,BER_bfsk_rs,"xc")
-
+for mod,ber in d_simu['TH']['BER'].items():
+    plt.plot(d_simu['TH']['l_SNRbdB'],ber, color_c[mod],label=mod,lw=0.7,alpha=0.8)
 
 plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
-plt.title(r"$BER$ en fonction du $SNR_{b,dB}$")
-plt.legend()
+plt.title(r"$BER$ théoriques et simulés en fonction du $SNR_{b,dB}$")
+plt.text(0.05, 0.15, r"Canal: $AWGN$ + $Nagakami-1$"+"\n"+f"Nb bits: {d_simu['NAGA-1']['B_SIZE']}", 
+         transform=plt.gca().transAxes, 
+         fontsize=10, 
+         verticalalignment='top',
+         bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.2))
+#Ajouter en petit en haut/bas les autres parametres de la simu
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
 plt.yscale('log')
 plt.xticks(range(-4,17,2))
 plt.ylim(1e-6, 1)
 plt.show(); plt.close()
+
+
+#%%Graphe BER AWGN+RS
+for mod,ber in d_simu['RS']['BER'].items():
+    plt.plot(d_simu['RS']['l_SNRbdB'],ber, color_p[mod])
+
+for mod,ber in d_simu['TH']['BER'].items():
+    plt.plot(d_simu['TH']['l_SNRbdB'],ber, color_c[mod],label=mod,lw=0.7,alpha=0.8)
+
+plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
+plt.title(r"$BER$ théoriques et simulés en fonction du $SNR_{b,dB}$")
+plt.text(0.05, 0.15, r"Canal: $AWGN$ + $RS$"+"\n"+f"Nb bits: {d_simu['NAGA-1']['B_SIZE']}", 
+         transform=plt.gca().transAxes, 
+         fontsize=10, 
+         verticalalignment='top',
+         bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.2))
+#Ajouter en petit en haut/bas les autres parametres de la simu
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+plt.yscale('log')
+plt.xticks(range(-4,17,2))
+plt.ylim(1e-6, 1)
+plt.show(); plt.close()
+
 
 
 

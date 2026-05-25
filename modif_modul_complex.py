@@ -434,7 +434,7 @@ print(f"BER : {BER:.4e}")
 #%% Simu QPSK
 
 bk = np.random.randint(2, size=100_000)
-BER, bk_r = simu_canal_lin(bk,qpsk_map,qpsk_demap, SNRbdB=12, Lc=32, Nc=1, fc=100, plots=True)
+BER, bk_r = simu_canal_lin(bk,qpsk_map,qpsk_demap, SNRbdB=12, Lc=32, Nc=1, fc=100,rs=True, plots=True)
 print(f"BER : {BER:.4e}")
 #%% Simu ASK
 

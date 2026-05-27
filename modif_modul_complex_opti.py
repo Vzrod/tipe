@@ -47,7 +47,7 @@ def demod_filter(r_bb, L):
     return y[L - 1::L][:len(r_bb) // L] #récupere les res des convolutions=intégrations et enleve le reste de la convolution inutile
     #le 2e slicing garde l'intégration des N=len(r_bb) // L symboles du message
 
-def awgn(s, SNRbdB, bit_par_symb,L):
+def awgn(s, SNRbdB, bit_par_symb,L, plot=False):
     """Ajoute un bruit AWGN selon Eb/N0=SNRb.
     """
     SNRb = 10 ** (SNRbdB / 10)
@@ -57,11 +57,12 @@ def awgn(s, SNRbdB, bit_par_symb,L):
     N0 = Eb / SNRb
     sigma = np.sqrt(N0 / 2)
     
-    b = sigma * np.random.randn(len(s))
+    n = sigma * np.random.randn(len(s))
     
-    #_plot_awgn_hist(b,sigma,SNRbdB,L)
+    if plot :
+        _plot_awgn_hist(n,sigma,SNRbdB,L)
     
-    return s + b
+    return s + n
 
 def nakagami_channel(s, m=1):
     """
@@ -405,11 +406,11 @@ def _plot_spectrum(s, fs, fmax=None, title="Spectre"):
 def _plot_chain(s_bb, s, r, r_sym, fc, fs, L, SNRbdB,b2s):
     n = min(10 * L, len(s))
     t = np.arange(n) / fs
-    _plot_signal(t, s_bb[:n], r"Enveloppe complexe","Amplitude", legend=True)
-    _plot_signal(t, s[:n], r"Signal passband émis $s(t)$ (réel)","s(t)")
-    _plot_signal(t, r[:n], f"Signal reçu $r(t)$, $E_b/N_0$ = {SNRbdB} dB","r(t)")
-    _plot_constellation(r_sym, f"Constellation {d_nom_mod[b2s.__name__]}, $E_b/N_0$ = {SNRbdB} dB")
-    _plot_spectrum(s, fs, fmax=2.5 * fc, title="Spectre du signal passband")
+    _plot_signal(t, s_bb[:n], f"{d_nom_mod[b2s.__name__]} - Enveloppe complexe","Amplitude", legend=True)
+    _plot_signal(t, s[:n], f"{d_nom_mod[b2s.__name__]} - Signal passband émis $s(t)$ (réel)","s(t)")
+    _plot_signal(t, r[:n], f"{d_nom_mod[b2s.__name__]} - Signal reçu $r(t)$,"+r"$SNR_{b,dB}$"+f" = {SNRbdB} dB","r(t)")
+    _plot_constellation(r_sym, f"{d_nom_mod[b2s.__name__]} - Constellation,"+r" $SNR_{b,dB}$ "+f"= {SNRbdB} dB")
+    _plot_spectrum(s, fs, fmax=2.5 * fc, title=f"{d_nom_mod[b2s.__name__]} - Spectre du signal passband")
 
 
 def _plot_awgn_hist(bruit, sigma, SNR_dB, L):
@@ -434,12 +435,19 @@ def _plot_awgn_hist(bruit, sigma, SNR_dB, L):
 #%% Simu BPSK
 
 bk = np.random.randint(2, size=100_000)
-BER, bk_r = simu_canal_lin(bk,bpsk_map,bpsk_demap, SNRbdB=4, Lc=32, Nc=1, fc=100, plots=True)
+bk[0]=1
+bk[1]=0
+bk[2]=1
+bk[3]=1
+bk[4]=0
+bk[5]=1
+bk[6]=0
+BER, bk_r = simu_canal_lin(bk,bpsk_map,bpsk_demap, SNRbdB=20, Lc=32, Nc=1, fc=100, plots=True)
 print(f"BER : {BER:.4e}")
 #%% Simu QPSK
 
 bk = np.random.randint(2, size=100_000)
-BER, bk_r = simu_canal_lin(bk,qpsk_map,qpsk_demap, SNRbdB=12, Lc=32, Nc=1, fc=100, plots=True)
+BER, bk_r = simu_canal_lin(bk,qpsk_map,qpsk_demap, SNRbdB=20, Lc=32, Nc=1, fc=100, plots=True)
 print(f"BER : {BER:.4e}")
 #%% Simu ASK
 
@@ -449,7 +457,7 @@ print(f"BER : {BER:.4e}")
 #%%Simu 16QAM
 
 bk = np.random.randint(2, size=100_000)
-BER, _  = simu_canal_lin(bk, _16qam_map, _16qam_demap, SNRbdB=10, Lc=32,Nc=1,fc=100, plots=True)
+BER, _  = simu_canal_lin(bk, _16qam_map, _16qam_demap, SNRbdB=200, Lc=32,Nc=1,fc=100, plots=True)
 print(f"BER : {BER:.4e}")
 #%%Simu BFSK
 
@@ -538,7 +546,7 @@ def simu_th(l_SNRbdB):
 l_SNRbdB = range(-4,16,1)
 fc=100
 MOY=1
-B_SIZE=100_000
+B_SIZE=1_000_000
 Lc=16
 Nc=1
     
@@ -549,11 +557,11 @@ d_simu['TH']=simu_th(l_SNRbdB)
 
 d_simu['AWGN'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY)
 
-d_simu['NAGA-1'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=1)
+#d_simu['NAGA-1'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=1)
 
 
 l_SNRbdB_rs = list(range(-4,16,1)) + list(map(lambda x:float(round(x,ndigits=2)),np.arange(4.2,10,0.2)))
-d_simu['RS'] = simu(l_SNRbdB_rs,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,rs=True)
+#d_simu['RS'] = simu(l_SNRbdB_rs,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,rs=True)
 
 
 
@@ -640,7 +648,4 @@ plt.yscale('log')
 plt.xticks(range(-4,17,2))
 plt.ylim(1e-6, 1)
 plt.show(); plt.close()
-
-
-
 

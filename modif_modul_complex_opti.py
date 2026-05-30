@@ -208,7 +208,7 @@ def simu_canal_lin(bk,b2s,s2b,SNRbdB,Lc=16, Nc=1, fc=100, faded=False, m=0, rs=F
     bk   : array de 0/1
     SNRbdB : Eb/N0 en dB
     Lc     : échantillons par période porteuse
-    Nc     : périodes porteuse par bit (durée 1 bit, Rb = fc/Nc)
+    Nc     : nb de périodes de porteuse par bit (durée 1 bit, Rb = fc/Nc)
     fc     : fréquence porteuse (Hz)
 
     Retour
@@ -608,7 +608,7 @@ plt.text(0.05, 0.15, r"Canal: $AWGN$"+"\n"+f"Nb bits: {d_simu['AWGN']['B_SIZE']}
 plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
 #Ajouter en petit en haut/bas les autres parametres de la simu
 plt.yscale('log')
-plt.xticks(range(-4,17,2))
+plt.xticks(range(-4,21,2))
 plt.ylim(1e-6, 1)
 plt.show(); plt.close()
 
@@ -624,7 +624,7 @@ for mod,ber in d_simu['TH']['BER'].items():
 
 plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
 plt.title(r"$BER$ théoriques et simulés en fonction du $SNR_{b,dB}$")
-plt.text(0.05, 0.15, r"Canal: $AWGN$ + "+f"Nagakami-{m}"+"\n"+f"Nb bits: {d_simu['NAGA-2.5']['B_SIZE']}", 
+plt.text(0.05, 0.15, r"Canal: $AWGN$ + "+f"Nagakami-{m}"+"\n"+f"Nb bits: {d_simu['NAGA-1']['B_SIZE']}", 
          transform=plt.gca().transAxes, 
          fontsize=10, 
          verticalalignment='top',
@@ -632,7 +632,7 @@ plt.text(0.05, 0.15, r"Canal: $AWGN$ + "+f"Nagakami-{m}"+"\n"+f"Nb bits: {d_simu
 #Ajouter en petit en haut/bas les autres parametres de la simu
 plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
 plt.yscale('log')
-plt.xticks(range(-4,17,2))
+plt.xticks(range(-4,21,2))
 plt.ylim(1e-6, 1)
 plt.show(); plt.close()
 
@@ -654,7 +654,7 @@ plt.text(0.05, 0.15, r"Canal: $AWGN$ + $RS$"+"\n"+f"Nb bits: {d_simu['RS']['B_SI
 #Ajouter en petit en haut/bas les autres parametres de la simu
 plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
 plt.yscale('log')
-plt.xticks(range(-4,17,2))
+plt.xticks(range(-4,21,2))
 plt.ylim(1e-6, 1)
 plt.show(); plt.close()
 

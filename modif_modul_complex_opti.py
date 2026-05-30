@@ -548,6 +548,8 @@ MOY=1
 B_SIZE=1_000_000
 Lc=16
 Nc=1
+
+#%%
     
 #nom_simu:{(keys = l_snrbdb,ber_...,fc,moy,_b_size,m,faded,rs,Lc,Nc)}
 d_simu = {}
@@ -558,18 +560,28 @@ d_simu['AWGN'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY)
 
 d_simu['NAGA-1'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=1)
 d_simu['NAGA-2.5'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=2.5)
+
+#%%
 d_simu['NAGA-0.5'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=0.5)
 d_simu['NAGA-0.75'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=0.75)
 d_simu['NAGA-1'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=1)
 
 
-
+#%%
 
 
 l_SNRbdB_rs = list(range(-4,20,1)) + list(map(lambda x:float(round(x,ndigits=2)),np.arange(4.2,10,0.2)))
 d_simu['RS'] = simu(l_SNRbdB_rs,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,rs=True)
 
 
+# a lancer
+d_simu['RS+NAGA-2.5'] = simu(l_SNRbdB_rs,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,rs=True, faded=True,m=2.5)
+
+#%%
+bk = rng.integers(0, 2, size=1_000_000, dtype=np.int8)
+BER, _  = simu_canal_lin(bk, ask_map, ask_demap, SNRbdB=16, Lc=32,Nc=1,fc=100, plots=False, faded=True, m=2.5)
+print(BER)
+#%%
 
 
 
@@ -661,13 +673,13 @@ plt.show(); plt.close()
 #%%
 import pickle
 
-with open(r"C:\Users\arthu\Documents\GitHub\tipe\d_simu2.pkl", "wb") as f:
+with open(r"C:\Users\arthu\Documents\GitHub\tipe\d_simu3.pkl", "wb") as f:
     pickle.dump(d_simu, f)
 
 
 #%%
 import pickle
-with open(r"C:\Users\arthu\Documents\GitHub\tipe\d_simu2.pkl", "rb") as f:
+with open(r"C:\Users\arthu\Documents\GitHub\tipe\d_simu3.pkl", "rb") as f:
     d_simu = pickle.load(f)
 
 

@@ -555,13 +555,14 @@ d_simu = {}
 
 d_simu['TH']=simu_th(l_SNRbdB)
 
-d_simu['AWGN'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY)
+#d_simu['AWGN'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY)
 
 #d_simu['NAGA-1'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=1)
+#d_simu['NAGA-2.5'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=2.5)
 
 
 l_SNRbdB_rs = list(range(-4,16,1)) + list(map(lambda x:float(round(x,ndigits=2)),np.arange(4.2,10,0.2)))
-#d_simu['RS'] = simu(l_SNRbdB_rs,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,rs=True)
+d_simu['RS'] = simu(l_SNRbdB_rs,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,rs=True)
 
 
 
@@ -607,15 +608,18 @@ plt.ylim(1e-6, 1)
 plt.show(); plt.close()
 
 #%%Graphe BER AWGN+Nagakami
-for mod,ber in d_simu['NAGA-1']['BER'].items():
-    plt.plot(d_simu['NAGA-1']['l_SNRbdB'],ber, color_p[mod])
+
+m=2.5
+
+for mod,ber in d_simu[f'NAGA-{m}']['BER'].items():
+    plt.plot(d_simu[f'NAGA-{m}']['l_SNRbdB'],ber, color_p[mod])
 
 for mod,ber in d_simu['TH']['BER'].items():
     plt.plot(d_simu['TH']['l_SNRbdB'],ber, color_c[mod],label=mod,lw=0.7,alpha=0.8)
 
 plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
 plt.title(r"$BER$ théoriques et simulés en fonction du $SNR_{b,dB}$")
-plt.text(0.05, 0.15, r"Canal: $AWGN$ + $Nagakami-1$"+"\n"+f"Nb bits: {d_simu['NAGA-1']['B_SIZE']}", 
+plt.text(0.05, 0.15, r"Canal: $AWGN$ + "+f"Nagakami-{m}"+"\n"+f"Nb bits: {d_simu['NAGA-2.5']['B_SIZE']}", 
          transform=plt.gca().transAxes, 
          fontsize=10, 
          verticalalignment='top',

@@ -12,7 +12,6 @@ from scipy.stats import norm
 from reedsolo import RSCodec, ReedSolomonError
 from scipy.special import erfc
 
-
 #%% Fonctions de bases
 
 d_bit_par_symb={"bpsk_map":1,"qpsk_map":2,"ask_map":1,"_16qam_map":4}
@@ -543,7 +542,7 @@ def simu_th(l_SNRbdB):
             }
 
 
-l_SNRbdB = range(-4,16,1)
+l_SNRbdB = range(-4,20,1)
 fc=100
 MOY=1
 B_SIZE=1_000_000
@@ -553,15 +552,21 @@ Nc=1
 #nom_simu:{(keys = l_snrbdb,ber_...,fc,moy,_b_size,m,faded,rs,Lc,Nc)}
 d_simu = {}
 
-d_simu['TH']=simu_th(l_SNRbdB)
+d_simu['TH']=simu_th(np.arange(-4,20,0.1))
 
-#d_simu['AWGN'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY)
+d_simu['AWGN'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY)
 
-#d_simu['NAGA-1'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=1)
-#d_simu['NAGA-2.5'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=2.5)
+d_simu['NAGA-1'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=1)
+d_simu['NAGA-2.5'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=2.5)
+d_simu['NAGA-0.5'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=0.5)
+d_simu['NAGA-0.75'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=0.75)
+d_simu['NAGA-1'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=1)
 
 
-l_SNRbdB_rs = list(range(-4,16,1)) + list(map(lambda x:float(round(x,ndigits=2)),np.arange(4.2,10,0.2)))
+
+
+
+l_SNRbdB_rs = list(range(-4,20,1)) + list(map(lambda x:float(round(x,ndigits=2)),np.arange(4.2,10,0.2)))
 d_simu['RS'] = simu(l_SNRbdB_rs,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,rs=True)
 
 
@@ -641,7 +646,7 @@ for mod,ber in d_simu['TH']['BER'].items():
 
 plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
 plt.title(r"$BER$ théoriques et simulés en fonction du $SNR_{b,dB}$")
-plt.text(0.05, 0.15, r"Canal: $AWGN$ + $RS$"+"\n"+f"Nb bits: {d_simu['NAGA-1']['B_SIZE']}", 
+plt.text(0.05, 0.15, r"Canal: $AWGN$ + $RS$"+"\n"+f"Nb bits: {d_simu['RS']['B_SIZE']}", 
          transform=plt.gca().transAxes, 
          fontsize=10, 
          verticalalignment='top',
@@ -652,4 +657,17 @@ plt.yscale('log')
 plt.xticks(range(-4,17,2))
 plt.ylim(1e-6, 1)
 plt.show(); plt.close()
+
+#%%
+import pickle
+
+with open(r"C:\Users\arthu\Documents\GitHub\tipe\d_simu2.pkl", "wb") as f:
+    pickle.dump(d_simu, f)
+
+
+#%%
+import pickle
+with open(r"C:\Users\arthu\Documents\GitHub\tipe\d_simu2.pkl", "rb") as f:
+    d_simu = pickle.load(f)
+
 

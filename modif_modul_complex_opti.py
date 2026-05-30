@@ -577,9 +577,9 @@ d_simu['RS'] = simu(l_SNRbdB_rs,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,rs=True)
 # a lancer
 d_simu['RS+NAGA-2.5'] = simu(l_SNRbdB_rs,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,rs=True, faded=True,m=2.5)
 
-#%%
+#%%SIMU NAGA 2.5 PROBLEME
 bk = rng.integers(0, 2, size=1_000_000, dtype=np.int8)
-BER, _  = simu_canal_lin(bk, ask_map, ask_demap, SNRbdB=16, Lc=32,Nc=1,fc=100, plots=False, faded=True, m=2.5)
+BER, _  = simu_canal_lin(bk, _16qam_map, _16qam_demap, SNRbdB=20, Lc=32,Nc=1,fc=100, plots=False, faded=True, m=2.5)
 print(BER)
 #%%
 

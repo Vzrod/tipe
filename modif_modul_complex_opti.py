@@ -63,15 +63,15 @@ def awgn(s, SNRbdB, bit_par_symb,L, plot=False):
     
     return s + n
 
-def nakagami_channel(s, m=1):
+def nakagami_channel(s,L, m=1):
     """
     Canal de Nakagami a partir des données du doc Narrowband Channel Measurements and Statistical Characterization
     """
-    
-    p_fading = np.random.gamma(shape=m, scale=1.0/m, size=len(s)) #puissance fading
-    
-    # L'enveloppe d'amplitude h est la racine carrée de la puissance
-    h = np.sqrt(p_fading)
+    Nb=len(s)//L
+    p_fading = np.random.gamma(shape=m, scale=1.0/m, size=Nb) #puissance fading
+    h=np.repeat(np.sqrt(p_fading), L)[:len(s)]
+    # L'enveloppe d'amplitude h est la racine carrée de la puissance 
+    #####a expliquer
 
     return s * h
 
@@ -229,7 +229,7 @@ def simu_canal_lin(bk,b2s,s2b,SNRbdB,Lc=16, Nc=1, fc=100, faded=False, m=0, rs=F
 
     # ---------- CANAL ----------
     if faded : 
-        s = nakagami_channel(s, m=m)
+        s = nakagami_channel(s,L, m=m)
     
     r = awgn(s, SNRbdB, bit_par_symb=d_bit_par_symb.get(b2s.__name__),L=L)
     # ---------------------------
@@ -271,7 +271,7 @@ def simu_canal_bfsk(bk, SNRbdB, Lc=16, Nc=1, fc=100,faded=False,m=0,rs=False, pl
     s = np.cos(2 * np.pi * f_inst * t)
 
     if faded : 
-        s = nakagami_channel(s, m=m)
+        s = nakagami_channel(s,L, m=m)
     r = awgn(s, SNRbdB, bit_par_symb=1,L=L)
 
     y0 = demod_filter(r * np.cos(2 * np.pi * f0 * t), L)
@@ -561,10 +561,9 @@ d_simu['AWGN'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY)
 d_simu['NAGA-1'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=1)
 d_simu['NAGA-2.5'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=2.5)
 
-#%%
 d_simu['NAGA-0.5'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=0.5)
 d_simu['NAGA-0.75'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=0.75)
-d_simu['NAGA-1'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=1)
+
 
 
 #%%
@@ -574,8 +573,8 @@ l_SNRbdB_rs = list(range(-4,20,1)) + list(map(lambda x:float(round(x,ndigits=2))
 d_simu['RS'] = simu(l_SNRbdB_rs,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,rs=True)
 
 
-# a lancer
-d_simu['RS+NAGA-2.5'] = simu(l_SNRbdB_rs,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,rs=True, faded=True,m=2.5)
+l_SNRbdB_rs_naga = list(range(-4,20,1)) + list(map(lambda x:float(round(x,ndigits=2)),np.arange(7,14,0.2)))
+d_simu['RS+NAGA-2.5'] = simu(l_SNRbdB_rs_naga,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,rs=True, faded=True,m=2.5)
 
 #%%SIMU NAGA 2.5 PROBLEME
 bk = rng.integers(0, 2, size=1_000_000, dtype=np.int8)
@@ -637,6 +636,30 @@ for mod,ber in d_simu['TH']['BER'].items():
 plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
 plt.title(r"$BER$ théoriques et simulés en fonction du $SNR_{b,dB}$")
 plt.text(0.05, 0.15, r"Canal: $AWGN$ + "+f"Nagakami-{m}"+"\n"+f"Nb bits: {d_simu['NAGA-1']['B_SIZE']}", 
+         transform=plt.gca().transAxes, 
+         fontsize=10, 
+         verticalalignment='top',
+         bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.2))
+#Ajouter en petit en haut/bas les autres parametres de la simu
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+plt.yscale('log')
+plt.xticks(range(-4,21,2))
+plt.ylim(1e-6, 1)
+plt.show(); plt.close()
+
+#%%Graphe BER AWGN+Nagakami+RS
+
+m=2.5
+
+for mod,ber in d_simu['RS+NAGA-2.5']['BER'].items():
+    plt.plot(d_simu['RS+NAGA-2.5']['l_SNRbdB'],ber, color_p[mod])
+
+for mod,ber in d_simu['TH']['BER'].items():
+    plt.plot(d_simu['TH']['l_SNRbdB'],ber, color_c[mod],label=mod,lw=0.7,alpha=0.8)
+
+plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
+plt.title(r"$BER$ théoriques et simulés en fonction du $SNR_{b,dB}$")
+plt.text(0.05, 0.15, r"Canal: $AWGN$ + "+f"Nagakami-{m}"+ r" $RS$" + "\n"+f"Nb bits: {d_simu['NAGA-1']['B_SIZE']}", 
          transform=plt.gca().transAxes, 
          fontsize=10, 
          verticalalignment='top',

@@ -542,7 +542,7 @@ def simu_th(l_SNRbdB):
             }
 
 
-l_SNRbdB = range(-4,20,1)
+l_SNRbdB = range(-4,25,1)
 fc=100
 MOY=1
 B_SIZE=1_000_000

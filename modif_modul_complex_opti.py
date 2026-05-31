@@ -305,7 +305,7 @@ def _plot_chain_bfsk(s, r, y0, y1, fc, df, fs, L, SNRbdB):
     plt.axhline(0, color='k', lw=0.5); plt.axvline(0, color='k', lw=0.5)
     plt.xlabel(r"$y_0 = \langle r,\,\cos(2\pi f_0 t)\rangle$")
     plt.ylabel(r"$y_1 = \langle r,\,\cos(2\pi f_1 t)\rangle$")
-    plt.title(f"Constellation BFSK orthogonale, "+ r"$SNR_{b,dB}$" + f" = {SNRbdB} dB")
+    plt.title(f"Constellation BFSK projetée, "+ r"$SNR_{b,dB}$" + f" = {SNRbdB} dB")
     plt.grid(True)
     plt.axis('equal')
     plt.legend()

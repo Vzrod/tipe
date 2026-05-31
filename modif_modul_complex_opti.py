@@ -556,13 +556,13 @@ d_simu = {}
 
 d_simu['TH']=simu_th(np.arange(-4,20,0.1))
 
-d_simu['AWGN'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY)
+#d_simu['AWGN'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY)
 
-d_simu['NAGA-1'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=1)
+#d_simu['NAGA-1'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=1)
 d_simu['NAGA-2.5'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=2.5)
 
-d_simu['NAGA-0.5'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=0.5)
-d_simu['NAGA-0.75'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=0.75)
+#d_simu['NAGA-0.5'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=0.5)
+#d_simu['NAGA-0.75'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=0.75)
 
 
 
@@ -635,7 +635,7 @@ for mod,ber in d_simu['TH']['BER'].items():
 
 plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
 plt.title(r"$BER$ théoriques et simulés en fonction du $SNR_{b,dB}$")
-plt.text(0.05, 0.15, r"Canal: $AWGN$ + "+f"Nagakami-{m}"+"\n"+f"Nb bits: {d_simu['NAGA-1']['B_SIZE']}", 
+plt.text(0.05, 0.15, r"Canal: $AWGN$ + "+f"Nagakami-{m}"+"\n"+f"Nb bits: {d_simu['NAGA-2.5']['B_SIZE']}", 
          transform=plt.gca().transAxes, 
          fontsize=10, 
          verticalalignment='top',

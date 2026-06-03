@@ -8,9 +8,9 @@ Created on Mon Feb  9 13:32:28 2026
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.fft import fft, fftfreq
-from scipy.stats import norm
 from reedsolo import RSCodec, ReedSolomonError
 from scipy.special import erfc
+import scipy
 
 #%% Fonctions de bases
 
@@ -34,7 +34,7 @@ def to_passband(s_bb, fc, fs):
     return np.real(s_bb * np.exp(1j * 2 * np.pi * fc * t))
 
 def to_baseband(r, fc, fs):
-    """signal réel en pb -> signal complexe en bb"""
+    """signal réel en pb -> signal complexe en bb, facteur 2 compense Re(s.exp) = 1/2 [s.exp() + s*.exp(-)]"""
     t = np.arange(len(r)) / fs
     return 2.0 * r * np.exp(-1j * 2 * np.pi * fc * t)
 
@@ -46,7 +46,7 @@ def demod_filter(r_bb, L):
     return y[L - 1::L][:len(r_bb) // L] #récupere les res des convolutions=intégrations et enleve le reste de la convolution inutile
     #le 2e slicing garde l'intégration des N=len(r_bb) // L symboles du message
 
-def awgn(s, SNRbdB, bit_par_symb,L, plot=False):
+def awgn(s, SNRbdB, bit_par_symb,L):
     """Ajoute un bruit AWGN selon Eb/N0=SNRb.
     """
     SNRb = 10 ** (SNRbdB / 10)
@@ -58,20 +58,15 @@ def awgn(s, SNRbdB, bit_par_symb,L, plot=False):
     
     n = np.random.normal(0,sigma,len(s))
     
-    if plot :
-        _plot_awgn_hist(n,sigma,SNRbdB,L)
-    
     return s + n
 
-def nakagami_channel(s,L, m=1):
+def nakagami_channel(s,L,m=1,omega=1):
     """
-    Canal de Nakagami a partir des données du doc Narrowband Channel Measurements and Statistical Characterization
+    Canal de Nakagami
     """
     Nb=len(s)//L
-    p_fading = np.random.gamma(shape=m, scale=1.0/m, size=Nb) #puissance fading
-    h=np.repeat(np.sqrt(p_fading), L)[:len(s)]
-    # L'enveloppe d'amplitude h est la racine carrée de la puissance 
-    #####a expliquer
+    h_amp = scipy.stats.nakagami.rvs(nu=m, scale=np.sqrt(omega), size=Nb)
+    h=np.repeat(h_amp, L)[:len(s)] #fading plat lent -> par bit et non par échantillons
 
     return s * h
 
@@ -100,7 +95,7 @@ def qpsk_map(bk):
         I= 2*b0-1
         Q= 2*b1-1
         
-        #normalisation /sqrt(2) pour Es=1
+        #normalisation /sqrt(2) pour Es=1, on met les symboles sur le cercle unité
         symbols[i] = (I+1j*Q)/np.sqrt(2)
         
     return symbols
@@ -162,7 +157,7 @@ def _16qam_map(ak):
         I = GRAY_MAP[(b0, b1)] #2 premiers bits sur l'axe I
         Q = GRAY_MAP[(b2, b3)] #les 2 suivants sur l'axe Q
         
-        # la division permet normalisation tq Es=1
+        # la division permet normalisation tq Es=1, car E_moy symboles = 10 = sum (I^2+Q^2)
         symbols[i] = (I + 1j * Q) / np.sqrt(10)
         
     return symbols
@@ -290,30 +285,6 @@ def simu_canal_bfsk(bk, SNRbdB, Lc=16, Nc=1, fc=100,faded=False,m=0,rs=False, pl
         return BER, bk_r,error
     return BER, bk_r
 
-
-def _plot_chain_bfsk(s, r, y0, y1, fc, df, fs, L, SNRbdB):
-    n = min(10 * L, len(s))
-    t = np.arange(n) / fs
-    _plot_signal(t, s[:n], r"Signal passband émis $s(t)$ (BFSK)", "s(t)")
-    _plot_signal(t, r[:n], f"Signal reçu $r(t)$, $E_b/N_0$ = {SNRbdB} dB", "r(t)")
-
-    #graph constellation bfsk
-    plt.figure(figsize=(5, 5))
-    plt.scatter(y0, y1, s=8, alpha=0.4)
-    lim = max(np.max(np.abs(y0)), np.max(np.abs(y1))) * 1.1
-    plt.plot([-lim, lim], [-lim, lim], 'r--', label=r'frontière $y_0 = y_1$')
-    plt.axhline(0, color='k', lw=0.5); plt.axvline(0, color='k', lw=0.5)
-    plt.xlabel(r"$y_0 = \langle r,\,\cos(2\pi f_0 t)\rangle$")
-    plt.ylabel(r"$y_1 = \langle r,\,\cos(2\pi f_1 t)\rangle$")
-    plt.title(f"Constellation BFSK projetée, "+ r"$SNR_{b,dB}$" + f" = {SNRbdB} dB")
-    plt.grid(True)
-    plt.axis('equal')
-    plt.legend()
-    plt.show()
-    plt.close()
-
-    _plot_spectrum(s, fs, fmax=2.5 * fc + df, title="Spectre du signal BFSK passband")
-
 #%% Reed-Solomon
 def bits_to_bytes(bk):
     remplissage = (8 - len(bk) % 8) % 8
@@ -344,7 +315,7 @@ def encod_rs(bk):
     return bits_encod,rempli
 
 def decod_rs(bk_r, rempli, nsym=32, nsize=255):
-    """On décode le msg recu bloc par bloc de 255 symboles/bits??? 
+    """On décode le msg recu bloc par bloc de 255 bits 
     et si un bloc est irréparable on laisse sa version erronnée"""
     msg_r, _ = bits_to_bytes(bk_r)
     rsc = RSCodec(nsym, nsize=nsize)
@@ -412,35 +383,9 @@ def _plot_chain(s_bb, s, r, r_sym, fc, fs, L, SNRbdB,b2s):
     _plot_spectrum(s, fs, fmax=2.5 * fc, title=f"{d_nom_mod[b2s.__name__]} - Spectre du signal passband")
 
 
-def _plot_awgn_hist(bruit, sigma, SNR_dB, L):
-    
-    plt.figure(figsize=(10, 6))
-    count, bins, ignored = plt.hist(bruit, bins=100, density=True, alpha=0.6, color='blue', edgecolor='black', label='Bruit généré')
-
-    x = np.linspace(-4*sigma, 4*sigma, 1000)
-    
-    densi_th = norm.pdf(x, loc=0, scale=sigma)
-    
-    plt.plot(x, densi_th, 'r-', linewidth=2.5, label=f'Loi Gaussienne Théorique\n($\mu=0$, $\sigma={sigma:.4f}$)')
-    
-    plt.title(f'Modèle du générateur AWGN (SNR = {SNR_dB} dB, L = {L})', fontsize=12)
-    plt.xlabel('Amplitude du bruit', fontsize=12)
-    plt.ylabel('Densité de probabilité', fontsize=12)
-    plt.grid(True, linestyle='--', alpha=0.5)
-    plt.legend(loc='upper right', fontsize=12)
-    plt.show();plt.close()
-
-
 #%% Simu BPSK
 
 bk = np.random.randint(2, size=100_000)
-bk[0]=1
-bk[1]=0
-bk[2]=1
-bk[3]=1
-bk[4]=0
-bk[5]=1
-bk[6]=0
 BER, bk_r = simu_canal_lin(bk,bpsk_map,bpsk_demap, SNRbdB=20, Lc=32, Nc=1, fc=100, plots=True)
 print(f"BER : {BER:.4e}")
 #%% Simu QPSK
@@ -541,7 +486,7 @@ def simu_th(l_SNRbdB):
                    }
             }
 
-
+#%%
 l_SNRbdB = range(-4,25,1)
 fc=100
 MOY=1
@@ -549,43 +494,24 @@ B_SIZE=1_000_000
 Lc=16
 Nc=1
 
-#%%
-    
 #nom_simu:{(keys = l_snrbdb,ber_...,fc,moy,_b_size,m,faded,rs,Lc,Nc)}
-d_simu = {}
+d_simu = {} #stockage resultat simulations
 
 d_simu['TH']=simu_th(np.arange(-4,20,0.1))
 
-#d_simu['AWGN'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY)
+d_simu['AWGN'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY)
 
-#d_simu['NAGA-1'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=1)
+d_simu['NAGA-1'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=1)
 d_simu['NAGA-2.5'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=2.5)
 
-#d_simu['NAGA-0.5'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=0.5)
-#d_simu['NAGA-0.75'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=0.75)
-
-
-
-#%%
-
+d_simu['NAGA-0.5'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=0.5)
+d_simu['NAGA-0.75'] = simu(l_SNRbdB,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,faded=True,m=0.75)
 
 l_SNRbdB_rs = list(range(-4,20,1)) + list(map(lambda x:float(round(x,ndigits=2)),np.arange(4.2,10,0.2)))
 d_simu['RS'] = simu(l_SNRbdB_rs,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,rs=True)
 
-
 l_SNRbdB_rs_naga = list(range(-4,20,1)) + list(map(lambda x:float(round(x,ndigits=2)),np.arange(7,14,0.2)))
 d_simu['RS+NAGA-2.5'] = simu(l_SNRbdB_rs_naga,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,rs=True, faded=True,m=2.5)
-
-#%%SIMU NAGA 2.5 PROBLEME
-bk = rng.integers(0, 2, size=1_000_000, dtype=np.int8)
-BER, _  = simu_canal_lin(bk, _16qam_map, _16qam_demap, SNRbdB=20, Lc=32,Nc=1,fc=100, plots=False, faded=True, m=2.5)
-print(BER)
-#%%
-
-
-
-#Ajouter la bsup ###################################
-
 
 #Couleur + forme des points
 color_p = {'BPSK':'+b',
@@ -602,6 +528,7 @@ color_c = {'BPSK':'-.b',
        '16QAM':'--m',
        'BFSK':'-.c'
        }
+
 #%%Graphe BER AWGN
 for mod,ber in d_simu['AWGN']['BER'].items():
     plt.plot(d_simu['AWGN']['l_SNRbdB'],ber, color_p[mod])
@@ -617,7 +544,6 @@ plt.text(0.05, 0.15, r"Canal: $AWGN$"+"\n"+f"Nb bits: {d_simu['AWGN']['B_SIZE']}
          verticalalignment='top',
          bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.2))
 plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
-#Ajouter en petit en haut/bas les autres parametres de la simu
 plt.yscale('log')
 plt.xticks(range(-4,21,2))
 plt.ylim(1e-6, 1)
@@ -636,6 +562,27 @@ for mod,ber in d_simu['TH']['BER'].items():
 plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
 plt.title(r"$BER$ théoriques et simulés en fonction du $SNR_{b,dB}$")
 plt.text(0.05, 0.15, r"Canal: $AWGN$ + "+f"Nagakami-{m}"+"\n"+f"Nb bits: {d_simu['NAGA-2.5']['B_SIZE']}", 
+         transform=plt.gca().transAxes, 
+         fontsize=10, 
+         verticalalignment='top',
+         bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.2))
+#Ajouter en petit en haut/bas les autres parametres de la simu
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+plt.yscale('log')
+plt.xticks(range(-4,21,2))
+plt.ylim(1e-6, 1)
+plt.show(); plt.close()
+
+#%%Graphe BER AWGN+RS
+for mod,ber in d_simu['RS']['BER'].items():
+    plt.plot(d_simu['RS']['l_SNRbdB'],ber, color_p[mod])
+
+for mod,ber in d_simu['TH']['BER'].items():
+    plt.plot(d_simu['TH']['l_SNRbdB'],ber, color_c[mod],label=mod,lw=0.7,alpha=0.8)
+
+plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
+plt.title(r"$BER$ théoriques et simulés en fonction du $SNR_{b,dB}$")
+plt.text(0.05, 0.15, r"Canal: $AWGN$ + $RS$"+"\n"+f"Nb bits: {d_simu['RS']['B_SIZE']}", 
          transform=plt.gca().transAxes, 
          fontsize=10, 
          verticalalignment='top',
@@ -671,27 +618,6 @@ plt.xticks(range(-4,21,2))
 plt.ylim(1e-6, 1)
 plt.show(); plt.close()
 
-
-#%%Graphe BER AWGN+RS
-for mod,ber in d_simu['RS']['BER'].items():
-    plt.plot(d_simu['RS']['l_SNRbdB'],ber, color_p[mod])
-
-for mod,ber in d_simu['TH']['BER'].items():
-    plt.plot(d_simu['TH']['l_SNRbdB'],ber, color_c[mod],label=mod,lw=0.7,alpha=0.8)
-
-plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
-plt.title(r"$BER$ théoriques et simulés en fonction du $SNR_{b,dB}$")
-plt.text(0.05, 0.15, r"Canal: $AWGN$ + $RS$"+"\n"+f"Nb bits: {d_simu['RS']['B_SIZE']}", 
-         transform=plt.gca().transAxes, 
-         fontsize=10, 
-         verticalalignment='top',
-         bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.2))
-#Ajouter en petit en haut/bas les autres parametres de la simu
-plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
-plt.yscale('log')
-plt.xticks(range(-4,21,2))
-plt.ylim(1e-6, 1)
-plt.show(); plt.close()
 
 #%%
 import pickle

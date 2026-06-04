@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon Feb  9 13:32:28 2026
+Created on Mon Jan  5 13:32:28 2026
 
 @author: arthu
+
+pygmentize -l python -f rtf -O "linenos=1,style=default" code_final_simu.py > code_highlight.rtf
 """
 
 import numpy as np
@@ -46,7 +48,7 @@ def demod_filter(r_bb, L):
     return y[L - 1::L][:len(r_bb) // L] #récupere les res des convolutions=intégrations et enleve le reste de la convolution inutile
     #le 2e slicing garde l'intégration des N=len(r_bb) // L symboles du message
 
-def awgn(s, SNRbdB, bit_par_symb,L):
+def awgn(s, SNRbdB, bit_par_symb,L, graph=False):
     """Ajoute un bruit AWGN selon Eb/N0=SNRb.
     """
     SNRb = 10 ** (SNRbdB / 10)
@@ -57,6 +59,10 @@ def awgn(s, SNRbdB, bit_par_symb,L):
     sigma = np.sqrt(N0 / 2)
     
     n = np.random.normal(0,sigma,len(s))
+    
+    if graph:
+        _plot_awgn_hist(n,sigma,SNRbdB,L)
+        _plot_spectrum(n, 3200,title=r'Spectre du canal AWGN - $SNR_{b} $= '+f'{SNRbdB} dB')
     
     return s + n
 
@@ -239,7 +245,7 @@ def simu_canal_lin(bk,b2s,s2b,SNRbdB,Lc=16, Nc=1, fc=100, faded=False, m=0, rs=F
     BER = np.mean(bk_original != bk_r)
 
     if plots:
-        _plot_chain(s_bb, s, r, r_sym, fc, fs, L, SNRbdB, b2s)
+        _plot_chain(s_bb, s, r, r_sym, fc, fs, L, SNRbdB, d_nom_mod[b2s.__name__])
 
     if rs : 
         return BER, bk_r,error
@@ -276,10 +282,11 @@ def simu_canal_bfsk(bk, SNRbdB, Lc=16, Nc=1, fc=100,faded=False,m=0,rs=False, pl
     if rs : 
         bk_r,error = decod_rs(bk_r,rempli)
 
-    BER = np.mean(bk_original != bk_r)
-
     if plots:
-        _plot_chain_bfsk(s, r, y0, y1, fc, df, fs, L, SNRbdB)
+        _plot_chain(None, s, r, None, fc, fs, L, SNRbdB, "BFSK", bfsk=True)
+        
+
+    BER = np.mean(bk_original != bk_r)
 
     if rs : 
         return BER, bk_r,error
@@ -373,14 +380,35 @@ def _plot_spectrum(s, fs, fmax=None, title="Spectre"):
     plt.show(); plt.close()
 
 
-def _plot_chain(s_bb, s, r, r_sym, fc, fs, L, SNRbdB,b2s):
+def _plot_chain(s_bb, s, r, r_sym, fc, fs, L, SNRbdB,mod_name, bfsk=False):
     n = min(10 * L, len(s))
     t = np.arange(n) / fs
-    _plot_signal(t, s_bb[:n], f"{d_nom_mod[b2s.__name__]} - Enveloppe complexe","Amplitude", legend=True)
-    _plot_signal(t, s[:n], f"{d_nom_mod[b2s.__name__]} - Signal passband émis $s(t)$ (réel)","s(t)")
-    _plot_signal(t, r[:n], f"{d_nom_mod[b2s.__name__]} - Signal reçu $r(t)$,"+r"$SNR_{b,dB}$"+f" = {SNRbdB} dB","r(t)")
-    _plot_constellation(r_sym, f"{d_nom_mod[b2s.__name__]} - Constellation,"+r" $SNR_{b,dB}$ "+f"= {SNRbdB} dB")
-    _plot_spectrum(s, fs, fmax=2.5 * fc, title=f"{d_nom_mod[b2s.__name__]} - Spectre du signal passband")
+    if not bfsk :
+        _plot_signal(t, s_bb[:n], f"{mod_name} - Enveloppe complexe","Amplitude", legend=True)
+    _plot_signal(t, s[:n], f"{mod_name} - Signal passband émis $s(t)$ (réel)","s(t)")
+    _plot_signal(t, r[:n], f"{mod_name} - Signal reçu $r(t)$,"+r"$SNR_{b,dB}$"+f" = {SNRbdB} dB","r(t)")
+    if not bfsk :
+        _plot_constellation(r_sym, f"{mod_name} - Constellation,"+r" $SNR_{b,dB}$ "+f"= {SNRbdB} dB")
+    _plot_spectrum(s, fs, fmax=2.5 * fc, title=f"{mod_name} - Spectre du signal passband")
+
+
+def _plot_awgn_hist(bruit, sigma, SNR_dB, L):
+    
+    plt.hist(bruit, bins=100, density=True, label='Bruit généré')
+
+    x = np.linspace(-4*sigma, 4*sigma, 1000)
+    
+    densi_th = scipy.stats.norm.pdf(x, loc=0, scale=sigma)
+    
+    plt.plot(x, densi_th, 'r-', linewidth=2.5, label=f'Loi Gaussienne Théorique\n$\sigma={sigma:.2f}$)')
+    
+    plt.title(f'Modèle du générateur AWGN (SNR = {SNR_dB} dB)', fontsize=12)
+    plt.xlabel('Amplitude du bruit', fontsize=12)
+    plt.ylabel('Densité de probabilité', fontsize=12)
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.legend(loc='upper right')
+    plt.show();plt.close()
+
 
 
 #%% Simu BPSK
@@ -391,22 +419,22 @@ print(f"BER : {BER:.4e}")
 #%% Simu QPSK
 
 bk = np.random.randint(2, size=100_000)
-BER, bk_r = simu_canal_lin(bk,qpsk_map,qpsk_demap, SNRbdB=20, Lc=32, Nc=1, fc=100, plots=True)
+BER, bk_r = simu_canal_lin(bk,qpsk_map,qpsk_demap, SNRbdB=20, Lc=32, Nc=10, fc=100, plots=True)
 print(f"BER : {BER:.4e}")
 #%% Simu ASK
 
 bk = np.random.randint(2, size=100_000)
-BER, bk_r = simu_canal_lin(bk,ask_map,ask_demap, SNRbdB=4, Lc=32, Nc=1, fc=100, plots=True)
+BER, bk_r = simu_canal_lin(bk,ask_map,ask_demap, SNRbdB=20, Lc=32, Nc=1, fc=100, plots=True)
 print(f"BER : {BER:.4e}")
 #%%Simu 16QAM
 
 bk = np.random.randint(2, size=100_000)
-BER, _  = simu_canal_lin(bk, _16qam_map, _16qam_demap, SNRbdB=200, Lc=32,Nc=1,fc=100, plots=True)
+BER, _  = simu_canal_lin(bk, _16qam_map, _16qam_demap, SNRbdB=20, Lc=32,Nc=1,fc=100, plots=True)
 print(f"BER : {BER:.4e}")
 #%%Simu BFSK
 
 bk = np.random.randint(2, size=100_000)
-BER, bk_r = simu_canal_bfsk(bk, SNRbdB=10, Lc=16, Nc=1, fc=100, plots=True)
+BER, bk_r = simu_canal_bfsk(bk, SNRbdB=20, Lc=32, Nc=1, fc=100, plots=True)
 print(f"BER BFSK : {BER:.4e}")
 
 #%%Simulations comparatives

@@ -25,12 +25,15 @@ def Q(x):
 def dB_to_dec(SNRbdB):    
     return 10 ** (SNRbdB / 10)
 
-def nrz_encoder(sym, L):
-    """etale chaque symbole sur L echantillons"""
+def etalement(sym, L):
+    """
+    Etale chaque symbole sur L echantillons
+    """
     return np.repeat(sym, L)
 
 def to_passband(s_bb, fc, fs):
-    """signal en baseband complexe -> signal réel passband
+    """
+    Signal en baseband complexe -> signal réel passband
     """
     t = np.arange(len(s_bb)) / fs
     return np.real(s_bb * np.exp(1j * 2 * np.pi * fc * t))
@@ -41,15 +44,18 @@ def to_baseband(r, fc, fs):
     return 2.0 * r * np.exp(-1j * 2 * np.pi * fc * t)
 
 def demod_filter(r_bb, L):
-    """filtre rectangulaire (intégrateur sur L échantillons)
-    et échantillonnage 1 fois par symbole."""
+    """
+    Filtre rectangulaire (intégrateur sur L échantillons)
+    et échantillonnage 1 fois par symbole.
+    """
     h = np.ones(L) / L
     y = np.convolve(r_bb, h, mode='full')
-    return y[L - 1::L][:len(r_bb) // L] #récupere les res des convolutions=intégrations et enleve le reste de la convolution inutile
+    return y[L - 1::L][:len(r_bb) // L] #récupere les res des convolutions=intégration
     #le 2e slicing garde l'intégration des N=len(r_bb) // L symboles du message
 
 def awgn(s, SNRbdB, bit_par_symb,L, graph=False):
-    """Ajoute un bruit AWGN selon Eb/N0=SNRb.
+    """
+    Ajoute un bruit AWGN selon Eb/N0=SNRb.
     """
     SNRb = 10 ** (SNRbdB / 10)
     Ps = np.mean(np.abs(s) ** 2)
@@ -68,11 +74,13 @@ def awgn(s, SNRbdB, bit_par_symb,L, graph=False):
 
 def nakagami_channel(s,L,m=1,omega=1):
     """
-    Canal de Nakagami
+    Canal de Nakagami. Omega correspond à la puissance moyenne de h fourni,
+    on le normalise à 1 afin de ne pas changer la puissance du signal s,
+    on modifie seulement aléatoirement son amplitude
     """
     Nb=len(s)//L
     h_amp = scipy.stats.nakagami.rvs(nu=m, scale=np.sqrt(omega), size=Nb)
-    h=np.repeat(h_amp, L)[:len(s)] #fading plat lent -> par bit et non par échantillons
+    h=np.repeat(h_amp, L)[:len(s)]
 
     return s * h
 
@@ -86,9 +94,8 @@ def bpsk_demap(r_sym):
     """Décision : signe de la partie réelle (axe I)."""
     return (r_sym.real > 0).astype(int)
 
-
 def qpsk_map(bk):
-    """1 symbole = 2 bits"""
+    """1 symbole = 2 bits conséqutifs (répartis sur les axes I et Q)"""
     n_bits=len(bk)-(len(bk) % 2)
     n_symb=n_bits//2
     
@@ -111,7 +118,7 @@ def qpsk_demap(r_sym):
     bk_r = np.zeros(2*n_symb, dtype=int)
     
     for i in range(n_symb):
-        #décision axe I
+        #Décision axe I
         if r_sym[i].real > 0: bk_r[2*i] = 1
         else: bk_r[2*i] = 0
             
@@ -130,7 +137,7 @@ def ask_demap(r_sym):
     
 
 #%% Mapping 16 QAM
-#code de Gray :associe 2 bits à une amplitude et inv
+#Code de Gray :associe 2 bits à une amplitude et inversement
 GRAY_MAP = {
     (0, 0): -3,
     (0, 1): -1,
@@ -147,7 +154,6 @@ def _16qam_map(ak):
     """ 
     Principe : 1 symbole = 4 bits consécutifs -> on les places dans le plan complexe
     ce qui nous donne une amplitude et une phase par symbole
-    Rq : on traite les bits 4 par 4
     """
     n_bits = len(ak) - (len(ak) % 4) # on coupe le msg pour avoir un mult de 4
     n_symb = n_bits // 4
@@ -177,7 +183,7 @@ def _16qam_demap(y):
         I_r = np.real(y[i]) * np.sqrt(10)
         Q_r = np.imag(y[i]) * np.sqrt(10)
         
-        #decision sur axe I (seuils à -2,0,2 pour avoir une amplitude de 1 centré en chaque point)
+        #decision sur axe I (seuils à -2,0,2 pour avoir un carré de cote 1 centré en chaque point)
         if I_r < -2: I_decide = -3
         elif I_r < 0: I_decide = -1
         elif I_r < 2: I_decide = 1
@@ -200,16 +206,16 @@ def _16qam_demap(y):
         
     return ak
 
-#%% Simu canal modulations linéaires
+#%% Simulation du canal pour les modulations linéaires
 
 def simu_canal_lin(bk,b2s,s2b,SNRbdB,Lc=16, Nc=1, fc=100, faded=False, m=0, rs=False,plots=False):
     """
     Paramètres
     ----------
-    bk   : array de 0/1
+    bk     : array de 0/1
     SNRbdB : Eb/N0 en dB
-    Lc     : échantillons par période porteuse
-    Nc     : nb de périodes de porteuse par bit (durée 1 bit, Rb = fc/Nc)
+    Lc     : nb d'échantillons par période de la porteuse
+    Nc     : un bit s'étale sur Nc période.s de la porteuse (durée 1 bit, Rb = fc/Nc)
     fc     : fréquence porteuse (Hz)
 
     Retour
@@ -225,8 +231,8 @@ def simu_canal_lin(bk,b2s,s2b,SNRbdB,Lc=16, Nc=1, fc=100, faded=False, m=0, rs=F
         bk,rempli = encod_rs(bk)
     
     ak = b2s(bk) #Mapping
-    s_bb = nrz_encoder(ak, L)  #signal complexe en bb sur-échantillonée
-    s = to_passband(s_bb, fc, fs)  #signal réel mod dans le canal
+    s_bb = etalement(ak, L)  #signal complexe en bb sur-échantilloné
+    s = to_passband(s_bb, fc, fs)  #signal réel modulé avant le canal
 
     # ---------- CANAL ----------
     if faded : 
@@ -255,10 +261,12 @@ def simu_canal_lin(bk,b2s,s2b,SNRbdB,Lc=16, Nc=1, fc=100, faded=False, m=0, rs=F
 #%%Mod BFSK
 
 def simu_canal_bfsk(bk, SNRbdB, Lc=16, Nc=1, fc=100,faded=False,m=0,rs=False, plots=False):
-
+    """
+    Pour la documentation se référer à celle des modulations linéaires
+    """
     L=Lc*Nc
     fs=Lc*fc
-    df=fc/Nc
+    df=fc/Nc # = 1/(T_p*N_c) = 1/T_b => Condition d'orthogonalité
     f0,f1=fc, fc+df
     
     bk_original = bk.copy()
@@ -271,10 +279,15 @@ def simu_canal_bfsk(bk, SNRbdB, Lc=16, Nc=1, fc=100,faded=False,m=0,rs=False, pl
     f_inst = np.repeat(f_inst,L)
     s = np.cos(2 * np.pi * f_inst * t)
 
+    # ---------- Canal -------------
+
     if faded : 
         s = nakagami_channel(s,L, m=m)
     r = awgn(s, SNRbdB, bit_par_symb=1,L=L)
+    
+    # ---------- Canal -------------
 
+    #On projette sur les 2 fréquences
     y0 = demod_filter(r * np.cos(2 * np.pi * f0 * t), L)
     y1 = demod_filter(r * np.cos(2 * np.pi * f1 * t), L)
     bk_r = (y1 > y0).astype(int)
@@ -294,6 +307,10 @@ def simu_canal_bfsk(bk, SNRbdB, Lc=16, Nc=1, fc=100,faded=False,m=0,rs=False, pl
 
 #%% Reed-Solomon
 def bits_to_bytes(bk):
+    """
+    On convertit une array de bits en un objet bytes et on retourne aussi
+    le nombre de bit 0 ajouter pour la conversion
+    """
     remplissage = (8 - len(bk) % 8) % 8
     bk_complet = list(bk) + [0] * remplissage #on complete avec des 0 pour avoir un multiple de 8
     octets = bytearray()
@@ -305,6 +322,9 @@ def bits_to_bytes(bk):
     return bytes(octets), remplissage
 
 def bytes_to_bits(bk, remplissage=None):
+    """
+    On récupère des octets que l'on ré-écrit sous forme de bits
+    """
     bits = []
     for byte in bk:
         for i in range(7, -1, -1):
@@ -316,14 +336,20 @@ def bytes_to_bits(bk, remplissage=None):
 
 
 def encod_rs(bk):
+    """
+    Ajout de la redondance par les codes de RS à notre array de bits 
+    par bloc de 255
+    """
     msg,rempli = bits_to_bytes(bk)
     msg_encod=RSCodec(32).encode(msg)
     bits_encod=bytes_to_bits(msg_encod)
     return bits_encod,rempli
 
 def decod_rs(bk_r, rempli, nsym=32, nsize=255):
-    """On décode le msg recu bloc par bloc de 255 bits 
-    et si un bloc est irréparable on laisse sa version erronnée"""
+    """
+    On décode le msg recu bloc par bloc de 255 bits 
+    et si un bloc est irréparable on garde sa version erronnée
+    """
     msg_r, _ = bits_to_bytes(bk_r)
     rsc = RSCodec(nsym, nsize=nsize)
     decoded = bytearray()
@@ -342,7 +368,7 @@ def decod_rs(bk_r, rempli, nsym=32, nsize=255):
     bk_r_decod = bytes_to_bits(bytes(decoded), remplissage=rempli)
     return bk_r_decod, n_fail
 
-#%% Graphiques
+#%% Fonctions de générations de graphiques
 
 def _plot_signal(t, s, title, ylabel="", legend=False):
     plt.figure(figsize=(8, 3))
@@ -367,9 +393,16 @@ def _plot_constellation(sym, title="Constellation"):
 
 
 def _plot_spectrum(s, fs, fmax=None, title="Spectre"):
-    N = len(s); S = fft(s); f = fftfreq(N, d=1 / fs)
-    mask = f >= 0; f, S = f[mask], S[mask]
-    mag = 2 * np.abs(S) / N; mag[0] /= 2
+    """
+    Calcul et affichage de la fft du signal donné en entrée
+    """
+    N = len(s)
+    S = fft(s)
+    f = fftfreq(N, d=1 / fs)
+    mask = f >= 0 
+    f, S = f[mask], S[mask]
+    mag = 2 * np.abs(S) / N
+    mag[0] /= 2
     dB = 20 * np.log10(np.maximum(mag, 1e-12))
     if fmax is not None:
         idx = f <= fmax; f, dB = f[idx], dB[idx]
@@ -393,6 +426,9 @@ def _plot_chain(s_bb, s, r, r_sym, fc, fs, L, SNRbdB,mod_name, bfsk=False):
 
 
 def _plot_awgn_hist(bruit, sigma, SNR_dB, L):
+    """
+    Affichage de l'histograme du générateur AWGN
+    """
     
     plt.hist(bruit, bins=100, density=True, label='Bruit généré')
 
@@ -410,6 +446,21 @@ def _plot_awgn_hist(bruit, sigma, SNR_dB, L):
     plt.show();plt.close()
 
 
+#Couleur + forme des points
+color_p = {'BPSK':'+b',
+       'QPSK':'xg',
+       'ASK':'+r',
+       '16QAM':'xm',
+       'BFSK':'+c'
+       }
+
+#Couleur + forme des courbes
+color_c = {'BPSK':'-.b',
+       'QPSK':'--g',
+       'ASK':'--r',
+       '16QAM':'--m',
+       'BFSK':'-.c'
+       }
 
 #%% Simu BPSK
 
@@ -437,7 +488,7 @@ bk = np.random.randint(2, size=100_000)
 BER, bk_r = simu_canal_bfsk(bk, SNRbdB=20, Lc=32, Nc=1, fc=100, plots=True)
 print(f"BER BFSK : {BER:.4e}")
 
-#%%Simulations comparatives
+#%% Simulations comparatives
 
 rng = np.random.default_rng()
 
@@ -488,7 +539,7 @@ def simu(l_SNRbdB,B_SIZE,fc=100,Lc=16,Nc=1,MOY=1,faded=False,m=1,rs=False):
                    }
             }
 
-#%%BER theoriques AWGN
+#%% BER theoriques AWGN
 def simu_th(l_SNRbdB):
 
     BER_bpsk_th = [Q(np.sqrt(2*dB_to_dec(_SNRbdB))) for _SNRbdB in l_SNRbdB]
@@ -541,22 +592,6 @@ d_simu['RS'] = simu(l_SNRbdB_rs,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,rs=True)
 l_SNRbdB_rs_naga = list(range(-4,20,1)) + list(map(lambda x:float(round(x,ndigits=2)),np.arange(7,14,0.2)))
 d_simu['RS+NAGA-2.5'] = simu(l_SNRbdB_rs_naga,B_SIZE,fc=fc,Lc=Lc,Nc=Nc,MOY=MOY,rs=True, faded=True,m=2.5)
 
-#Couleur + forme des points
-color_p = {'BPSK':'+b',
-       'QPSK':'xg',
-       'ASK':'+r',
-       '16QAM':'xm',
-       'BFSK':'+c'
-       }
-
-#Couleur + forme des courbes
-color_c = {'BPSK':'-.b',
-       'QPSK':'--g',
-       'ASK':'--r',
-       '16QAM':'--m',
-       'BFSK':'-.c'
-       }
-
 #%%Graphe BER AWGN
 for mod,ber in d_simu['AWGN']['BER'].items():
     plt.plot(d_simu['AWGN']['l_SNRbdB'],ber, color_p[mod])
@@ -567,7 +602,7 @@ for mod,ber in d_simu['TH']['BER'].items():
 plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
 plt.title(r"$BER$ théoriques et simulés en fonction du $SNR_{b,dB}$")
 plt.text(0.05, 0.15, r"Canal: $AWGN$"+"\n"+f"Nb bits: {d_simu['AWGN']['B_SIZE']}", 
-         transform=plt.gca().transAxes, 
+         transform=plt.gca().transAxes, #place le referentiel des coordonnées en fonctions des axes du graph
          fontsize=10, 
          verticalalignment='top',
          bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.2))
@@ -577,7 +612,7 @@ plt.xticks(range(-4,21,2))
 plt.ylim(1e-6, 1)
 plt.show(); plt.close()
 
-#%%Graphe BER AWGN+Nagakami
+#%%Graphe BER AWGN+Nakagami
 
 m=2.5
 
@@ -590,11 +625,10 @@ for mod,ber in d_simu['TH']['BER'].items():
 plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
 plt.title(r"$BER$ théoriques et simulés en fonction du $SNR_{b,dB}$")
 plt.text(0.05, 0.15, r"Canal: $AWGN$ + "+f"Nagakami-{m}"+"\n"+f"Nb bits: {d_simu['NAGA-2.5']['B_SIZE']}", 
-         transform=plt.gca().transAxes, 
+         transform=plt.gca().transAxes, #place le referentiel des coordonnées en fonctions des axes du graph
          fontsize=10, 
          verticalalignment='top',
          bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.2))
-#Ajouter en petit en haut/bas les autres parametres de la simu
 plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
 plt.yscale('log')
 plt.xticks(range(-4,21,2))
@@ -611,11 +645,10 @@ for mod,ber in d_simu['TH']['BER'].items():
 plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
 plt.title(r"$BER$ théoriques et simulés en fonction du $SNR_{b,dB}$")
 plt.text(0.05, 0.15, r"Canal: $AWGN$ + $RS$"+"\n"+f"Nb bits: {d_simu['RS']['B_SIZE']}", 
-         transform=plt.gca().transAxes, 
+         transform=plt.gca().transAxes, #place le referentiel des coordonnées en fonctions des axes du graph
          fontsize=10, 
          verticalalignment='top',
          bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.2))
-#Ajouter en petit en haut/bas les autres parametres de la simu
 plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
 plt.yscale('log')
 plt.xticks(range(-4,21,2))
@@ -635,11 +668,10 @@ for mod,ber in d_simu['TH']['BER'].items():
 plt.xlabel(r"$SNR_{b,dB}$"); plt.ylabel(r"$BER$")
 plt.title(r"$BER$ théoriques et simulés en fonction du $SNR_{b,dB}$")
 plt.text(0.05, 0.15, r"Canal: $AWGN$ + "+f"Nagakami-{m}"+ r" $RS$" + "\n"+f"Nb bits: {d_simu['NAGA-1']['B_SIZE']}", 
-         transform=plt.gca().transAxes, 
+         transform=plt.gca().transAxes, #place le referentiel des coordonnées en fonctions des axes du graph
          fontsize=10, 
          verticalalignment='top',
          bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.2))
-#Ajouter en petit en haut/bas les autres parametres de la simu
 plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
 plt.yscale('log')
 plt.xticks(range(-4,21,2))
@@ -656,7 +688,7 @@ with open(r"C:\Users\arthu\Documents\GitHub\tipe\d_simu3.pkl", "wb") as f:
 
 #%%
 import pickle
-with open(r"C:\Users\arthu\Documents\GitHub\tipe\d_simu3.pkl", "rb") as f:
+with open(r"C:\Users\arthu\Documents\GitHub\tipe\d_simu_rs_naga_final.pkl", "rb") as f:
     d_simu = pickle.load(f)
 
-
+    

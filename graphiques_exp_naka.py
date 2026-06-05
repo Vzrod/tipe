@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue May 26 20:57:40 2026
+Created on Mon Feb 2 20:57:40 2026
 
 @author: arthu
 """
@@ -8,7 +8,6 @@ Created on Tue May 26 20:57:40 2026
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import stats
-
 
 #Récupération données
 d, v = [], []
@@ -62,9 +61,7 @@ plt.grid(alpha=0.3, which='both')
 plt.title(r'$L_{dB}(d) = A + 10*n*log_{10}(d) + X_{sigma}$')
 plt.show()
 
-
 #%%Calcul de m
-
 
 V_modele = 10**((A + pente*log_d)/20)
 
@@ -81,7 +78,7 @@ x = np.linspace(0.01, alpha.max()*1.05, 300)
 distrib_calc = stats.nakagami.pdf(x, m, loc=0, scale=omeg)
 distrib_rayleigh = stats.nakagami.pdf(x, 1, loc=0, scale=np.sqrt(Omega))
 
-#%%Affichage graph
+#%%Affichage graphiques résultats
 
 bar = np.linspace(0, alpha.max()*1.05, 30) #30 bar sur l'histogramme
 plt.hist(alpha, bins=bar, density=True, alpha=0.5, color='lightblue',edgecolor='blue', label=f'Mesures (N={len(alpha)})')
